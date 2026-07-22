@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keypad Configuration Editor</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success-bg: #064e3b;
+      --success-text: #34d399;
+      --error-bg: #7f1d1d;
+      --error-text: #fca5a5;
+      --input-bg: #0f172a;
+      --input-border: #475569;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 1.5rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    header {
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    h1 { font-size: 1.5rem; font-weight: 700; }
+
+    .btn-group { display: flex; gap: 0.75rem; }
+
+    button {
+      background-color: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border-radius: 0.375rem;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+    }
+
+    button:hover { background-color: var(--primary-hover); }
+
+    button.secondary {
+      background-color: transparent;
+      border: 1px solid var(--input-border);
+      color: var(--text);
+    }
+    button.secondary:hover { background-color: var(--card-border); }
+
+    #status-msg {
+      padding: 0.75rem 1rem;
+      border-radius: 0.375rem;
+      margin-bottom: 1.5rem;
+      font-weight: 500;
+      display: none;
+    }
+    #status-msg.success { display: block; background-color: var(--success-bg); color: var(--success-text); }
+    #status-msg.error { display: block; background-color: var(--error-bg); color: var(--error-text); }
+    #status-msg.warning { display: block; background-color: #78350f; color: #fde68a; }
+
+    section {
+      background-color: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 0.5rem;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+
+    h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: var(--text);
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 0.5rem;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.375rem;
+    }
+
+    label { font-size: 0.85rem; font-weight: 500; color: var(--muted); }
+
+    input[type="text"], input[type="number"], select, textarea {
+      background-color: var(--input-bg);
+      border: 1px solid var(--input-border);
+      color: var(--text);
+      padding: 0.45rem 0.65rem;
+      border-radius: 0.375rem;
+      font-size: 0.9rem;
+      width: 100%;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      outline: 2px solid var(--primary);
+      border-color: transparent;
+    }
+
+    .checkbox-field {
+      flex-direction: row;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 1.25rem;
+    }
+    .checkbox-field input { width: auto; cursor: pointer; }
+
+    /* Key Grid Styling */
+    .grid-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      overflow-x: auto;
+    }
+
+    .grid-row {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .grid-cell {
+      flex: 1;
+      min-width: 110px;
+      height: 70px;
+      background-color: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 0.375rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0.25rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: center;
+    }
+
+    .grid-cell:hover {
+      border-color: var(--primary);
+      background-color: #1e293b;
+    }
+
+    .grid-cell.active {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--primary);
+      background-color: #1e293b;
+    }
+
+    .cell-coord { font-size: 0.7rem; color: var(--muted); }
+    .cell-label { font-size: 0.75rem; font-weight: 600; word-break: break-word; line-height: 1.1; }
+
+    /* Action Editor Panel */
+    .editor-panel {
+      background-color: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 0.375rem;
+      padding: 1rem;
+      margin-top: 1rem;
+    }
+
+    .knob-card {
+      background-color: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 0.375rem;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .knob-card h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.75rem; color: var(--primary); }
+
+    .action-slot {
+      border-left: 2px solid var(--card-border);
+      padding-left: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .action-slot h4 { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; margin-bottom: 0.25rem; }
+
+    #toml-preview-container {
+      display: none;
+      margin-top: 1rem;
+    }
+
+    #toml-preview {
+      width: 100%;
+      height: 300px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      white-space: pre;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Keypad Configuration</h1>
+    <div class="btn-group">
+      <button id="btn-save" type="button">Save</button>
+      <button id="btn-view-toml" type="button" class="secondary">View TOML</button>
+    </div>
+  </header>
+
+  <div id="status-msg"></div>
+
+  <section id="sec-device">
+    <h2>Device Settings</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="vendor_id">Vendor ID (Hex or Dec)</label>
+        <input type="text" id="vendor_id" placeholder="0x1234">
+      </div>
+      <div class="field">
+        <label for="product_id">Product ID (Hex or Dec)</label>
+        <input type="text" id="product_id" placeholder="0x5678">
+      </div>
+      <div class="field">
+        <label for="usage_page">Usage Page (Optional)</label>
+        <input type="text" id="usage_page" placeholder="0xff00">
+      </div>
+      <div class="field">
+        <label for="usage">Usage (Optional)</label>
+        <input type="text" id="usage" placeholder="0x0001">
+      </div>
+    </div>
+  </section>
+
+  <section id="sec-layout">
+    <h2>Layout Dimensions</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="layout_rows">Rows</label>
+        <input type="number" id="layout_rows" min="1" max="16" value="3">
+      </div>
+      <div class="field">
+        <label for="layout_cols">Cols</label>
+        <input type="number" id="layout_cols" min="1" max="16" value="3">
+      </div>
+      <div class="field">
+        <label for="layout_knobs">Knobs</label>
+        <input type="number" id="layout_knobs" min="0" max="8" value="2">
+      </div>
+    </div>
+  </section>
+
+  <section id="sec-keys">
+    <h2>Key Grid Mappings</h2>
+    <div id="grid-container" class="grid-container"></div>
+    <div id="key-editor" class="editor-panel" style="display: none;">
+      <h3 id="key-editor-title" style="font-size: 0.9rem; margin-bottom: 0.5rem; font-weight: 600;">Edit Key</h3>
+      <div id="key-action-fields"></div>
+    </div>
+  </section>
+
+  <section id="sec-knobs">
+    <h2>Knob Mappings</h2>
+    <div id="knobs-container"></div>
+  </section>
+
+  <section id="sec-app">
+    <h2>Application Settings</h2>
+    <div class="form-grid">
+      <div class="field checkbox-field">
+        <input type="checkbox" id="app_statusbar" checked>
+        <label for="app_statusbar">Enable Status Bar Menu</label>
+      </div>
+      <div class="field">
+        <label for="app_log_level">Log Level</label>
+        <select id="app_log_level"></select>
+      </div>
+      <div class="field">
+        <label for="app_icon">Icon Path (Optional)</label>
+        <input type="text" id="app_icon" placeholder="Path to status bar icon">
+      </div>
+    </div>
+  </section>
+
+  <div id="toml-preview-container">
+    <section>
+      <h2>TOML Preview (Read-Only)</h2>
+      <textarea id="toml-preview" readonly></textarea>
+    </section>
+  </div>
+
+  <script>
+    let meta = { action_types: [], media_controls: [], log_levels: [] };
+    let configData = { device: {}, layout: {}, app: {}, keys: [], knobs: [] };
+    let selectedKey = null;
+
+    function showStatus(msg, type = 'success') {
+      const el = document.getElementById('status-msg');
+      el.textContent = msg;
+      el.className = type;
+    }
+
+    function formatActionSummary(act) {
+      if (!act || !act.type || act.type === 'none') return '—';
+      if (act.type === 'macro') return `macro: ${Array.isArray(act.keys) ? act.keys.join(', ') : act.keys || ''}`;
+      if (act.type === 'media') return `media: ${act.control || ''}`;
+      if (act.type === 'app') return `app: ${act.name || act.path || ''}`;
+      if (act.type === 'script') return `script: ${act.path || ''}`;
+      if (act.type === 'shell') return `shell: ${act.command || ''}`;
+      if (act.type === 'aerospace') return `aerospace: ${act.command || ''}`;
+      return `${act.type}`;
+    }
+
+    function parseHexOrInt(val) {
+      if (val === null || val === undefined || val === '') return null;
+      if (typeof val === 'number') return val;
+      const s = val.toString().trim();
+      if (s.toLowerCase().startswith && s.toLowerCase().startswith('0x')) {
+        return parseInt(s, 16);
+      }
+      if (s.toLowerCase().indexOf('0x') === 0) {
+        return parseInt(s, 16);
+      }
+      return parseInt(s, 10);
+    }
+
+    function renderActionFields(container, action, onChange) {
+      container.innerHTML = '';
+      
+      const typeField = document.createElement('div');
+      typeField.className = 'field';
+      typeField.style.marginBottom = '0.5rem';
+      
+      const typeLabel = document.createElement('label');
+      typeLabel.textContent = 'Action Type';
+      
+      const typeSelect = document.createElement('select');
+      const types = ['none', ...meta.action_types];
+      types.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t;
+        opt.textContent = t;
+        if (action && action.type === t) opt.selected = true;
+        if (!action && t === 'none') opt.selected = true;
+        typeSelect.appendChild(opt);
+      });
+
+      typeField.appendChild(typeLabel);
+      typeField.appendChild(typeSelect);
+      container.appendChild(typeField);
+
+      const paramsContainer = document.createElement('div');
+      container.appendChild(paramsContainer);
+
+      function updateParams() {
+        paramsContainer.innerHTML = '';
+        const curType = typeSelect.value;
+        if (curType === 'none') {
+          onChange(null);
+          return;
+        }
+
+        const newAct = { type: curType, ...(action || {}) };
+        newAct.type = curType;
+
+        if (curType === 'macro') {
+          const f = document.createElement('div');
+          f.className = 'field';
+          f.innerHTML = '<label>Keys (comma separated for multiple)</label>';
+          const inp = document.createElement('input');
+          inp.type = 'text';
+          inp.value = Array.isArray(newAct.keys) ? newAct.keys.join(', ') : (newAct.keys || '');
+          inp.oninput = () => {
+            const v = inp.value.trim();
+            if (v.includes(',')) {
+              newAct.keys = v.split(',').map(s => s.trim()).filter(Boolean);
+            } else {
+              newAct.keys = v;
+            }
+            onChange(newAct);
+          };
+          f.appendChild(inp);
+          paramsContainer.appendChild(f);
+        } else if (curType === 'media') {
+          const f = document.createElement('div');
+          f.className = 'field';
+          f.innerHTML = '<label>Control</label>';
+          const sel = document.createElement('select');
+          meta.media_controls.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c;
+            opt.textContent = c;
+            if (newAct.control === c) opt.selected = true;
+            sel.appendChild(opt);
+          });
+          if (!newAct.control && meta.media_controls.length > 0) {
+            newAct.control = meta.media_controls[0];
+          }
+          sel.onchange = () => {
+            newAct.control = sel.value;
+            onChange(newAct);
+          };
+          f.appendChild(sel);
+          paramsContainer.appendChild(f);
+        } else if (curType === 'app') {
+          const f1 = document.createElement('div');
+          f1.className = 'field';
+          f1.style.marginBottom = '0.5rem';
+          f1.innerHTML = '<label>App Name</label>';
+          const inp1 = document.createElement('input');
+          inp1.type = 'text';
+          inp1.value = newAct.name || '';
+          inp1.oninput = () => { newAct.name = inp1.value; onChange(newAct); };
+          f1.appendChild(inp1);
+
+          const f2 = document.createElement('div');
+          f2.className = 'field';
+          f2.innerHTML = '<label>App Path</label>';
+          const inp2 = document.createElement('input');
+          inp2.type = 'text';
+          inp2.value = newAct.path || '';
+          inp2.oninput = () => { newAct.path = inp2.value; onChange(newAct); };
+          f2.appendChild(inp2);
+
+          paramsContainer.appendChild(f1);
+          paramsContainer.appendChild(f2);
+        } else if (curType === 'script') {
+          const f1 = document.createElement('div');
+          f1.className = 'field';
+          f1.style.marginBottom = '0.5rem';
+          f1.innerHTML = '<label>Script Path</label>';
+          const inp1 = document.createElement('input');
+          inp1.type = 'text';
+          inp1.value = newAct.path || '';
+          inp1.oninput = () => { newAct.path = inp1.value; onChange(newAct); };
+          f1.appendChild(inp1);
+
+          const f2 = document.createElement('div');
+          f2.className = 'field';
+          f2.innerHTML = '<label>Args (comma separated)</label>';
+          const inp2 = document.createElement('input');
+          inp2.type = 'text';
+          inp2.value = Array.isArray(newAct.args) ? newAct.args.join(', ') : (newAct.args || '');
+          inp2.oninput = () => {
+            const v = inp2.value.trim();
+            newAct.args = v ? v.split(',').map(s => s.trim()).filter(Boolean) : [];
+            onChange(newAct);
+          };
+          f2.appendChild(inp2);
+
+          paramsContainer.appendChild(f1);
+          paramsContainer.appendChild(f2);
+        } else if (curType === 'shell' || curType === 'aerospace') {
+          const f = document.createElement('div');
+          f.className = 'field';
+          f.innerHTML = '<label>Command</label>';
+          const inp = document.createElement('input');
+          inp.type = 'text';
+          inp.value = newAct.command || '';
+          inp.oninput = () => { newAct.command = inp.value; onChange(newAct); };
+          f.appendChild(inp);
+          paramsContainer.appendChild(f);
+        }
+
+        onChange(newAct);
+      }
+
+      typeSelect.onchange = updateParams;
+      updateParams();
+    }
+
+    function renderGrid() {
+      const rows = parseInt(document.getElementById('layout_rows').value, 10) || 1;
+      const cols = parseInt(document.getElementById('layout_cols').value, 10) || 1;
+      const container = document.getElementById('grid-container');
+      container.innerHTML = '';
+
+      // Prune keys out of bounds
+      const initialKeyCount = configData.keys.length;
+      configData.keys = configData.keys.filter(k => k.row < rows && k.col < cols);
+      if (configData.keys.length < initialKeyCount) {
+        showStatus('Some key bindings outside the new layout dimensions were dropped.', 'warning');
+      }
+
+      for (let r = 0; r < rows; r++) {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'grid-row';
+        for (let c = 0; c < cols; c++) {
+          const cell = document.createElement('div');
+          cell.className = 'grid-cell';
+          if (selectedKey && selectedKey.row === r && selectedKey.col === c) {
+            cell.classList.add('active');
+          }
+
+          const kb = configData.keys.find(k => k.row === r && k.col === c);
+          const act = kb ? kb.action : null;
+
+          cell.innerHTML = `<span class="cell-coord">(${r}, ${c})</span><span class="cell-label">${formatActionSummary(act)}</span>`;
+          cell.onclick = () => {
+            selectedKey = { row: r, col: c };
+            renderGrid();
+            openKeyEditor(r, c);
+          };
+          rowEl.appendChild(cell);
+        }
+        container.appendChild(rowEl);
+      }
+    }
+
+    function openKeyEditor(r, c) {
+      const editor = document.getElementById('key-editor');
+      editor.style.display = 'block';
+      document.getElementById('key-editor-title').textContent = `Edit Key Binding (Row ${r}, Col ${c})`;
+
+      let kb = configData.keys.find(k => k.row === r && k.col === c);
+      const fieldsContainer = document.getElementById('key-action-fields');
+
+      renderActionFields(fieldsContainer, kb ? kb.action : null, (newAct) => {
+        if (!newAct || newAct.type === 'none') {
+          configData.keys = configData.keys.filter(k => !(k.row === r && k.col === c));
+        } else {
+          if (!kb) {
+            kb = { row: r, col: c, action: newAct };
+            configData.keys.push(kb);
+          } else {
+            kb.action = newAct;
+          }
+        }
+        renderGrid();
+      });
+    }
+
+    function renderKnobs() {
+      const count = parseInt(document.getElementById('layout_knobs').value, 10) || 0;
+      const container = document.getElementById('knobs-container');
+      container.innerHTML = '';
+
+      // Prune knobs out of bounds
+      const initialCount = configData.knobs.length;
+      configData.knobs = configData.knobs.filter(kn => kn.index < count);
+      if (configData.knobs.length < initialCount) {
+        showStatus('Some knob bindings outside the new layout index count were dropped.', 'warning');
+      }
+
+      for (let i = 0; i < count; i++) {
+        let kn = configData.knobs.find(k => k.index === i);
+        if (!kn) {
+          kn = { index: i };
+          configData.knobs.push(kn);
+        }
+
+        const card = document.createElement('div');
+        card.className = 'knob-card';
+        card.innerHTML = `<h3>Knob ${i}</h3>`;
+
+        ['on_cw', 'on_ccw', 'on_press'].forEach(dir => {
+          const slot = document.createElement('div');
+          slot.className = 'action-slot';
+          slot.innerHTML = `<h4>${dir.replace('on_', '').toUpperCase()} Action</h4>`;
+          const slotFields = document.createElement('div');
+          slot.appendChild(slotFields);
+
+          renderActionFields(slotFields, kn[dir], (newAct) => {
+            if (!newAct || newAct.type === 'none') {
+              delete kn[dir];
+            } else {
+              kn[dir] = newAct;
+            }
+          });
+          card.appendChild(slot);
+        });
+
+        container.appendChild(card);
+      }
+    }
+
+    function populateUI() {
+      // Device
+      if (configData.device) {
+        const d = configData.device;
+        document.getElementById('vendor_id').value = d.vendor_id !== undefined ? (typeof d.vendor_id === 'number' ? '0x' + d.vendor_id.toString(16) : d.vendor_id) : '';
+        document.getElementById('product_id').value = d.product_id !== undefined ? (typeof d.product_id === 'number' ? '0x' + d.product_id.toString(16) : d.product_id) : '';
+        document.getElementById('usage_page').value = d.usage_page !== undefined && d.usage_page !== null ? (typeof d.usage_page === 'number' ? '0x' + d.usage_page.toString(16) : d.usage_page) : '';
+        document.getElementById('usage').value = d.usage !== undefined && d.usage !== null ? (typeof d.usage === 'number' ? '0x' + d.usage.toString(16) : d.usage) : '';
+      }
+
+      // Layout
+      if (configData.layout) {
+        document.getElementById('layout_rows').value = configData.layout.rows || 3;
+        document.getElementById('layout_cols').value = configData.layout.cols || 3;
+        document.getElementById('layout_knobs').value = configData.layout.knobs || 0;
+      }
+
+      // App
+      if (configData.app) {
+        document.getElementById('app_statusbar').checked = configData.app.statusbar !== false;
+        document.getElementById('app_icon').value = configData.app.icon || '';
+      }
+
+      // Meta Log Levels
+      const logSel = document.getElementById('app_log_level');
+      logSel.innerHTML = '';
+      meta.log_levels.forEach(lvl => {
+        const opt = document.createElement('option');
+        opt.value = lvl;
+        opt.textContent = lvl;
+        if (configData.app && configData.app.log_level === lvl) opt.selected = true;
+        logSel.appendChild(opt);
+      });
+
+      renderGrid();
+      renderKnobs();
+    }
+
+    function gatherPayload() {
+      const vidRaw = document.getElementById('vendor_id').value.trim();
+      const pidRaw = document.getElementById('product_id').value.trim();
+      const upRaw = document.getElementById('usage_page').value.trim();
+      const uRaw = document.getElementById('usage').value.trim();
+
+      const vid = vidRaw.startsWith('0x') ? parseInt(vidRaw, 16) : parseInt(vidRaw, 10);
+      const pid = pidRaw.startsWith('0x') ? parseInt(pidRaw, 16) : parseInt(pidRaw, 10);
+      const up = upRaw ? (upRaw.startsWith('0x') ? parseInt(upRaw, 16) : parseInt(upRaw, 10)) : null;
+      const u = uRaw ? (uRaw.startsWith('0x') ? parseInt(uRaw, 16) : parseInt(uRaw, 10)) : null;
+
+      const rows = parseInt(document.getElementById('layout_rows').value, 10);
+      const cols = parseInt(document.getElementById('layout_cols').value, 10);
+      const knobsCount = parseInt(document.getElementById('layout_knobs').value, 10);
+
+      const statusbar = document.getElementById('app_statusbar').checked;
+      const log_level = document.getElementById('app_log_level').value;
+      const icon = document.getElementById('app_icon').value.trim() || null;
+
+      const device = { vendor_id: vid, product_id: pid };
+      if (up !== null && !isNaN(up)) device.usage_page = up;
+      if (u !== null && !isNaN(u)) device.usage = u;
+
+      const layout = { rows, cols, knobs: knobsCount };
+      const app = { statusbar, log_level };
+      if (icon) app.icon = icon;
+
+      return {
+        device,
+        layout,
+        app,
+        keys: configData.keys,
+        knobs: configData.knobs
+      };
+    }
+
+    async function loadData() {
+      try {
+        const metaRes = await fetch('/api/meta');
+        meta = await metaRes.json();
+
+        const cfgRes = await fetch('/api/config');
+        configData = await cfgRes.json();
+        if (!configData.keys) configData.keys = [];
+        if (!configData.knobs) configData.knobs = [];
+
+        populateUI();
+      } catch (err) {
+        showStatus('Failed to load configuration: ' + err.message, 'error');
+      }
+    }
+
+    async function saveData() {
+      try {
+        const payload = gatherPayload();
+        const res = await fetch('/api/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const resData = await res.json();
+        if (res.ok && resData.ok) {
+          showStatus('Saved — config reloaded', 'success');
+          // Refresh TOML preview if open
+          if (document.getElementById('toml-preview-container').style.display === 'block') {
+            fetchTomlPreview();
+          }
+        } else {
+          showStatus(resData.error || 'Failed to save configuration', 'error');
+        }
+      } catch (err) {
+        showStatus('Error saving configuration: ' + err.message, 'error');
+      }
+    }
+
+    async function fetchTomlPreview() {
+      try {
+        const res = await fetch('/api/config.toml');
+        const text = await res.text();
+        document.getElementById('toml-preview').value = text;
+      } catch (err) {
+        document.getElementById('toml-preview').value = 'Error fetching TOML preview: ' + err.message;
+      }
+    }
+
+    document.getElementById('layout_rows').onchange = () => { renderGrid(); };
+    document.getElementById('layout_cols').onchange = () => { renderGrid(); };
+    document.getElementById('layout_knobs').onchange = () => { renderKnobs(); };
+
+    document.getElementById('btn-save').onclick = saveData;
+
+    document.getElementById('btn-view-toml').onclick = () => {
+      const container = document.getElementById('toml-preview-container');
+      if (container.style.display === 'block') {
+        container.style.display = 'none';
+        document.getElementById('btn-view-toml').textContent = 'View TOML';
+      } else {
+        container.style.display = 'block';
+        document.getElementById('btn-view-toml').textContent = 'Hide TOML';
+        fetchTomlPreview();
+      }
+    };
+
+    window.onload = loadData;
+  </script>
+</body>
+</html>

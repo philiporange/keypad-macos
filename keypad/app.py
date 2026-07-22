@@ -129,9 +129,32 @@ def run_statusbar(config_path: str) -> None:
             super().__init__(
                 "Keypad", icon=_statusbar_icon(cfg), template=True, quit_button=None
             )
-            self.menu = ["Reload Config", "Quit"]
+            self.menu = ["Configure…", "Reload Config", "Quit"]
             self.listener = None
+            self.web = None
             self.reload_config()
+
+        def _on_config_saved(self):
+            # Called from the web server's thread: refresh bindings and the
+            # listener only — menu-bar UI (icon) is left to the main thread.
+            try:
+                self.cfg = load_config(self.config_path)
+                self.setup_listener()
+                logger.info("Configuration saved from web editor; bindings reloaded.")
+            except Exception as e:
+                logger.error("Failed to apply saved configuration: %s", e)
+
+        @rumps.clicked("Configure…")
+        def configure(self, _=None):
+            import webbrowser
+
+            from .webconfig import ConfigServer
+
+            if self.web is None:
+                self.web = ConfigServer(self.config_path, on_saved=self._on_config_saved)
+                self.web.start()
+                logger.info("Config editor at %s", self.web.url)
+            webbrowser.open(self.web.url)
 
         def setup_listener(self):
             if self.listener:
@@ -164,6 +187,8 @@ def run_statusbar(config_path: str) -> None:
         def quit_app(self, _=None):
             if self.listener:
                 self.listener.stop()
+            if self.web:
+                self.web.stop()
             rumps.quit_application()
 
     app = KeypadApp(config_path)
@@ -198,6 +223,28 @@ def cmd_check_config(config_path: str) -> None:
     except ConfigError as e:
         print(f"Configuration Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def cmd_configure(config_path: str, port: int, open_browser: bool) -> None:
+    """Serve the browser config editor until interrupted."""
+    import webbrowser
+
+    from .webconfig import ConfigServer
+
+    def on_saved():
+        print("Saved. (The running daemon picks it up via its own editor or Reload Config.)")
+
+    server = ConfigServer(config_path, on_saved=on_saved, port=port)
+    server.start()
+    print(f"Config editor: {server.url}  (Ctrl-C to stop)")
+    if open_browser:
+        webbrowser.open(server.url)
+    try:
+        signal.pause()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.stop()
 
 
 def cmd_list_devices() -> None:
@@ -261,6 +308,12 @@ def main() -> None:
     check_parser = subparsers.add_parser("check-config", help="Validate configuration file and print bindings summary")
     check_parser.add_argument("--config", default=default_config, help="Path to TOML configuration file")
 
+    # Subcommand 'configure'
+    cfg_parser = subparsers.add_parser("configure", help="Open the browser-based config editor")
+    cfg_parser.add_argument("--config", default=default_config, help="Path to TOML configuration file")
+    cfg_parser.add_argument("--port", type=int, default=0, help="Port to serve on (default: ephemeral)")
+    cfg_parser.add_argument("--no-open", action="store_true", help="Do not open the browser automatically")
+
     args = parser.parse_args()
 
     if args.command == "run":
@@ -287,6 +340,9 @@ def main() -> None:
 
     elif args.command == "check-config":
         cmd_check_config(args.config)
+
+    elif args.command == "configure":
+        cmd_configure(args.config, args.port, not args.no_open)
 
 
 if __name__ == "__main__":

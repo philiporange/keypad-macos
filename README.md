@@ -60,6 +60,19 @@ Validate your configuration at any time:
 python -m keypad.app check-config
 ```
 
+### Browser config editor
+
+The easiest way to edit bindings is the built-in editor: click the menu-bar
+icon and choose **Configure…** — a localhost-only page opens with the device
+settings, a clickable NxM key grid, per-knob cw/ccw/press editors covering
+every action type, and a TOML preview. Saving validates the config server-side
+and the running daemon reloads its bindings immediately. Without the menu bar:
+
+```bash
+python -m keypad.app configure            # serves the editor and opens it
+python -m keypad.app configure --port 8391 --no-open
+```
+
 ## Device Discovery & Learning
 
 List all connected HID devices and their Vendor/Product IDs:
