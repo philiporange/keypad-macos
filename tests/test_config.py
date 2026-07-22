@@ -101,10 +101,16 @@ action = { type = "script", path = "/bin/ls", args = ["-la"] }
 row = 1
 col = 2
 action = { type = "shell", command = "echo test" }
+
+[[knob]]
+index = 0
+on_cw = { type = "aerospace", command = "workspace next" }
 """)
 
     cfg = load_config(cfg_file)
     assert len(cfg.keys) == 6
+    assert cfg.knobs[0].on_cw.type == "aerospace"
+    assert cfg.knobs[0].on_cw.command == "workspace next"
     assert cfg.keys[0].action.keys == ["cmd+c", "cmd+v"]
     assert cfg.keys[1].action.control == "play_pause"
     assert cfg.keys[2].action.name == "Safari"

@@ -6,6 +6,8 @@ scripts, or executing shell commands. OS-specific Quartz calls are lazily import
 """
 
 import logging
+import shlex
+import shutil
 import subprocess
 from typing import Dict, Optional, Tuple
 
@@ -169,6 +171,32 @@ def _execute_script(action: Action) -> None:
     subprocess.run([action.path, *args], check=True)
 
 
+# Fallback locations checked when 'aerospace' is not on the daemon's PATH
+# (launchd agents often run with a minimal PATH).
+AEROSPACE_PATHS = ("/opt/homebrew/bin/aerospace", "/usr/local/bin/aerospace")
+
+
+def _aerospace_binary() -> Optional[str]:
+    found = shutil.which("aerospace")
+    if found:
+        return found
+    for candidate in AEROSPACE_PATHS:
+        if shutil.which(candidate):
+            return candidate
+    return None
+
+
+def _execute_aerospace(action: Action) -> None:
+    if not action.command:
+        logger.error("Aerospace action missing command")
+        return
+    binary = _aerospace_binary()
+    if binary is None:
+        logger.error("AeroSpace CLI not found (install AeroSpace or add it to PATH)")
+        return
+    subprocess.run([binary, *shlex.split(action.command)], check=True)
+
+
 def _execute_shell(action: Action) -> None:
     if not action.command:
         logger.error("Shell action missing command")
@@ -189,6 +217,8 @@ def execute(action: Action) -> None:
             _execute_script(action)
         elif action.type == "shell":
             _execute_shell(action)
+        elif action.type == "aerospace":
+            _execute_aerospace(action)
         else:
             logger.error("Unknown action type: %s", action.type)
     except Exception as e:

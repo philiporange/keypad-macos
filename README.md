@@ -4,7 +4,7 @@ A lightweight macOS background utility for mapping custom USB and Bluetooth macr
 
 ## Features
 
-- **Flexible Action Mappings**: Map keypresses and knob rotations/clicks to key macros (Quartz CGEvent), media controls (volume, brightness, playback), app launches, python/shell scripts, and arbitrary shell commands.
+- **Flexible Action Mappings**: Map keypresses and knob rotations/clicks to key macros (Quartz CGEvent), media controls (volume, brightness, playback), app launches, python/shell scripts, arbitrary shell commands, and [AeroSpace](https://github.com/nikitabobko/AeroSpace) window-manager commands.
 - **Menu Bar Status Bar**: Optional menu bar status item with fast config reloading.
 - **Robust Reconnection**: Background thread auto-reconnects with exponential backoff if the keypad device is unplugged or disconnected.
 - **Diagnostic Utilities**: Built-in CLI commands to list connected HID devices and learn raw report formats.
@@ -27,6 +27,32 @@ cp keypad.example.toml ~/.config/keypad/keypad.toml
 ```
 
 Edit `~/.config/keypad/keypad.toml` to define your device parameters (`vendor_id`, `product_id`, `usage_page`, `usage`), layout grid size, and action bindings.
+
+### AeroSpace window-manager actions
+
+If you use [AeroSpace](https://github.com/nikitabobko/AeroSpace), any of its CLI
+commands can be bound directly with the `aerospace` action type — the value of
+`command` is passed to the `aerospace` binary as arguments:
+
+```toml
+[[key]]
+row = 2
+col = 1
+action = { type = "aerospace", command = "workspace-back-and-forth" }
+
+[[knob]]
+index = 1
+on_cw = { type = "aerospace", command = "workspace next --wrap-around" }
+on_ccw = { type = "aerospace", command = "workspace prev --wrap-around" }
+on_press = { type = "aerospace", command = "balance-sizes" }
+```
+
+Useful commands: `workspace <n>`, `workspace next|prev`, `focus left|right|up|down`,
+`move left|right`, `fullscreen`, `layout tiles|accordion`, `balance-sizes`,
+`workspace-back-and-forth` — see `aerospace --help` for the full list. The binary
+is found via `PATH`, falling back to the Homebrew locations
+(`/opt/homebrew/bin/aerospace`, `/usr/local/bin/aerospace`), which matters when
+running under launchd's minimal environment.
 
 Validate your configuration at any time:
 

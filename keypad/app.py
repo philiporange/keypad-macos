@@ -36,6 +36,8 @@ def _describe_action(action: Action) -> str:
         return f"script(path={action.path}, args={action.args})"
     elif action.type == "shell":
         return f"shell({action.command})"
+    elif action.type == "aerospace":
+        return f"aerospace({action.command})"
     return f"unknown({action.type})"
 
 

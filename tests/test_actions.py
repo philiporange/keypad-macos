@@ -39,6 +39,27 @@ def test_shell_action(mock_run):
     mock_run.assert_called_once_with("echo 'test' >> /tmp/out.log", shell=True, check=True)
 
 
+@patch("keypad.actions.shutil.which", return_value="/opt/homebrew/bin/aerospace")
+@patch("keypad.actions.subprocess.run")
+def test_aerospace_action(mock_run, mock_which):
+    """Verify aerospace action resolves the CLI and splits the command into args."""
+    act = Action(type="aerospace", command="workspace next --wrap-around")
+    execute(act)
+    mock_run.assert_called_once_with(
+        ["/opt/homebrew/bin/aerospace", "workspace", "next", "--wrap-around"],
+        check=True,
+    )
+
+
+@patch("keypad.actions.shutil.which", return_value=None)
+@patch("keypad.actions.subprocess.run")
+def test_aerospace_missing_binary_logs(mock_run, mock_which, caplog):
+    """Verify a missing AeroSpace CLI logs an error and runs nothing."""
+    execute(Action(type="aerospace", command="fullscreen"))
+    mock_run.assert_not_called()
+    assert "AeroSpace CLI not found" in caplog.text
+
+
 @patch("keypad.actions.subprocess.run", side_effect=RuntimeError("Subprocess failed"))
 def test_failed_action_logs_and_does_not_raise(mock_run, caplog):
     """Verify that action failures or unknown action types log errors and never raise exceptions."""

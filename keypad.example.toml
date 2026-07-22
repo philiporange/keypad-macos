@@ -60,6 +60,18 @@ row = 2
 col = 0
 action = { type = "media", control = "previous" }
 
+# Row 2, Col 1: AeroSpace — jump back to the previous workspace
+[[key]]
+row = 2
+col = 1
+action = { type = "aerospace", command = "workspace-back-and-forth" }
+
+# Row 2, Col 2: AeroSpace — toggle fullscreen on the focused window
+[[key]]
+row = 2
+col = 2
+action = { type = "aerospace", command = "fullscreen" }
+
 
 # Knob bindings (2 knobs, 0-indexed)
 
@@ -70,8 +82,9 @@ on_cw = { type = "media", control = "volume_up" }
 on_ccw = { type = "media", control = "volume_down" }
 on_press = { type = "media", control = "mute" }
 
-# Knob 1: Display brightness adjustment
+# Knob 1: AeroSpace — cycle workspaces; press to balance window sizes
 [[knob]]
 index = 1
-on_cw = { type = "media", control = "brightness_up" }
-on_ccw = { type = "media", control = "brightness_down" }
+on_cw = { type = "aerospace", command = "workspace next --wrap-around" }
+on_ccw = { type = "aerospace", command = "workspace prev --wrap-around" }
+on_press = { type = "aerospace", command = "balance-sizes" }

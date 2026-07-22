@@ -19,7 +19,7 @@ class ConfigError(Exception):
 @dataclass
 class Action:
     """Represents an executable action triggered by a key or knob event."""
-    type: str  # 'macro' | 'media' | 'app' | 'script' | 'shell'
+    type: str  # 'macro' | 'media' | 'app' | 'script' | 'shell' | 'aerospace'
     keys: Optional[Union[str, List[str]]] = None
     control: Optional[str] = None
     name: Optional[str] = None
@@ -84,7 +84,7 @@ VALID_MEDIA_CONTROLS = {
     "brightness_down",
 }
 
-VALID_ACTION_TYPES = {"macro", "media", "app", "script", "shell"}
+VALID_ACTION_TYPES = {"macro", "media", "app", "script", "shell", "aerospace"}
 
 
 def _parse_action(data: Any) -> Action:
@@ -132,6 +132,14 @@ def _parse_action(data: Any) -> Action:
         if not command or not isinstance(command, str):
             raise ConfigError("Shell action requires string 'command'")
         return Action(type="shell", command=command)
+
+    elif action_type == "aerospace":
+        command = data.get("command")
+        if not command or not isinstance(command, str):
+            raise ConfigError(
+                "Aerospace action requires string 'command' (e.g. 'workspace 3')"
+            )
+        return Action(type="aerospace", command=command)
 
     raise ConfigError(f"Unsupported action type: {action_type}")
 
