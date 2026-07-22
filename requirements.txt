@@ -1,0 +1,4 @@
+hidapi
+rumps
+pyobjc-framework-Quartz
+pytest

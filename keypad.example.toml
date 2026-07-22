@@ -1,0 +1,77 @@
+# Example configuration file for Keypad macro daemon
+# Copy to ~/.config/keypad/keypad.toml
+
+[device]
+vendor_id = 0x1234
+product_id = 0x5678
+usage_page = 0xff00
+usage = 0x0001
+
+[layout]
+rows = 3
+cols = 3
+knobs = 2
+
+[app]
+statusbar = true
+log_level = "INFO"
+
+# Key bindings (3x3 grid, 0-indexed)
+
+# Row 0, Col 0: Screenshot macro shortcut
+[[key]]
+row = 0
+col = 0
+action = { type = "macro", keys = "cmd+shift+4" }
+
+# Row 0, Col 1: Play/Pause media key
+[[key]]
+row = 0
+col = 1
+action = { type = "media", control = "play_pause" }
+
+# Row 0, Col 2: Launch application by name
+[[key]]
+row = 0
+col = 2
+action = { type = "app", name = "Safari" }
+
+# Row 1, Col 0: Execute external script with arguments
+[[key]]
+row = 1
+col = 0
+action = { type = "script", path = "/usr/local/bin/backup.sh", args = ["--verbose", "--destination", "/tmp"] }
+
+# Row 1, Col 1: Run shell command
+[[key]]
+row = 1
+col = 1
+action = { type = "shell", command = "echo 'Keypad event triggered' >> /tmp/keypad.log" }
+
+# Row 1, Col 2: Next media track
+[[key]]
+row = 1
+col = 2
+action = { type = "media", control = "next" }
+
+# Row 2, Col 0: Previous media track
+[[key]]
+row = 2
+col = 0
+action = { type = "media", control = "previous" }
+
+
+# Knob bindings (2 knobs, 0-indexed)
+
+# Knob 0: Volume control with mute on press
+[[knob]]
+index = 0
+on_cw = { type = "media", control = "volume_up" }
+on_ccw = { type = "media", control = "volume_down" }
+on_press = { type = "media", control = "mute" }
+
+# Knob 1: Display brightness adjustment
+[[knob]]
+index = 1
+on_cw = { type = "media", control = "brightness_up" }
+on_ccw = { type = "media", control = "brightness_down" }
