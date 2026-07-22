@@ -146,6 +146,9 @@ def run_statusbar(config_path: str) -> None:
             try:
                 self.cfg = load_config(self.config_path)
                 logging.basicConfig(level=getattr(logging, self.cfg.log_level, logging.INFO), force=True)
+                # Template mode: macOS recolors the black/alpha icon to match
+                # the menu bar's light or dark appearance.
+                self.template = True
                 self.icon = _statusbar_icon(self.cfg)
                 self.setup_listener()
                 logger.info("Configuration loaded/reloaded.")
