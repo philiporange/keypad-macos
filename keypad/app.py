@@ -98,6 +98,22 @@ def run_headless(config_path: str) -> None:
     logger.info("Keypad daemon stopped.")
 
 
+ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
+
+
+def _statusbar_icon(cfg: Config) -> Union[str, None]:
+    """The menu-bar icon path: the config's [app] icon if set, else the
+    bundled asset, else None (rumps falls back to the app name)."""
+    candidates = []
+    if cfg.icon:
+        candidates.append(Path(cfg.icon).expanduser())
+    candidates.append(ASSETS_DIR / "statusbar.png")
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def run_statusbar(config_path: str) -> None:
     """Run macro keypad listener loop with macOS menu bar integration via rumps."""
     import rumps
@@ -130,6 +146,7 @@ def run_statusbar(config_path: str) -> None:
             try:
                 self.cfg = load_config(self.config_path)
                 logging.basicConfig(level=getattr(logging, self.cfg.log_level, logging.INFO), force=True)
+                self.icon = _statusbar_icon(self.cfg)
                 self.setup_listener()
                 logger.info("Configuration loaded/reloaded.")
             except Exception as e:

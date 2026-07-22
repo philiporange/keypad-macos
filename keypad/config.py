@@ -71,6 +71,7 @@ class Config:
     knobs: List[KnobBinding] = field(default_factory=list)
     statusbar: bool = True
     log_level: str = "INFO"
+    icon: Optional[str] = None  # menu-bar icon path; None uses the bundled asset
 
 
 VALID_MEDIA_CONTROLS = {
@@ -269,6 +270,10 @@ def load_config(path: Union[str, Path]) -> Config:
     if not isinstance(log_level, str):
         raise ConfigError("app.log_level must be a string")
 
+    icon = app_table.get("icon")
+    if icon is not None and not isinstance(icon, str):
+        raise ConfigError("app.icon must be a string path")
+
     return Config(
         device=device,
         layout=layout,
@@ -276,4 +281,5 @@ def load_config(path: Union[str, Path]) -> Config:
         knobs=knob_bindings,
         statusbar=statusbar,
         log_level=log_level.upper(),
+        icon=icon,
     )
