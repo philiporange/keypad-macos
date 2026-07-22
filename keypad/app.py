@@ -124,7 +124,11 @@ def run_statusbar(config_path: str) -> None:
             cfg = load_config(cfg_path)
             # template=True must be set at construction: the black/alpha icon
             # is recolored by macOS to match the menu bar appearance.
-            super().__init__("Keypad", icon=_statusbar_icon(cfg), template=True)
+            # quit_button=None: the menu declares its own Quit item (which
+            # stops the listener first), so rumps must not append another.
+            super().__init__(
+                "Keypad", icon=_statusbar_icon(cfg), template=True, quit_button=None
+            )
             self.menu = ["Reload Config", "Quit"]
             self.listener = None
             self.reload_config()
