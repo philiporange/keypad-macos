@@ -120,8 +120,11 @@ def run_statusbar(config_path: str) -> None:
 
     class KeypadApp(rumps.App):
         def __init__(self, cfg_path: str):
-            super().__init__("Keypad", icon=None)
             self.config_path = cfg_path
+            cfg = load_config(cfg_path)
+            # template=True must be set at construction: the black/alpha icon
+            # is recolored by macOS to match the menu bar appearance.
+            super().__init__("Keypad", icon=_statusbar_icon(cfg), template=True)
             self.menu = ["Reload Config", "Quit"]
             self.listener = None
             self.reload_config()
@@ -146,10 +149,8 @@ def run_statusbar(config_path: str) -> None:
             try:
                 self.cfg = load_config(self.config_path)
                 logging.basicConfig(level=getattr(logging, self.cfg.log_level, logging.INFO), force=True)
-                # Template mode: macOS recolors the black/alpha icon to match
-                # the menu bar's light or dark appearance.
-                self.template = True
                 self.icon = _statusbar_icon(self.cfg)
+                self.template = True
                 self.setup_listener()
                 logger.info("Configuration loaded/reloaded.")
             except Exception as e:

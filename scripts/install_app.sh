@@ -45,11 +45,21 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# The bundle executable is a thin wrapper that runs python as a CHILD and
+# waits. exec-ing python (making it the bundle's main process) makes macOS
+# misplace the status item at an offscreen coordinate; as a child process it
+# places correctly, and the wrapper's lifetime keeps LaunchServices treating
+# the app as running (so re-opening activates instead of duplicating). The
+# pgrep guard covers daemons started outside the bundle.
 cat > "$APP/Contents/MacOS/keypad" <<LAUNCHER
 #!/bin/zsh
 export PATH="/opt/homebrew/bin:/usr/local/bin:\$PATH"
+if pgrep -f "python -m keypad.app run" >/dev/null; then
+  exit 0
+fi
 cd "$REPO"
-exec "$PYTHON" -m keypad.app run
+mkdir -p "\$HOME/Library/Logs"
+"$PYTHON" -m keypad.app run >> "\$HOME/Library/Logs/keypad.log" 2>&1
 LAUNCHER
 chmod +x "$APP/Contents/MacOS/keypad"
 
