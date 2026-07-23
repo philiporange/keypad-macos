@@ -248,6 +248,13 @@
         <label for="usage">Usage (Optional)</label>
         <input type="text" id="usage" placeholder="0x0001">
       </div>
+      <div class="field">
+        <label for="protocol">Protocol</label>
+        <select id="protocol">
+          <option value="vendor">Vendor (raw 01/02 reports)</option>
+          <option value="keyboard">Keyboard (F13-F24 keys)</option>
+        </select>
+      </div>
     </div>
   </section>
 
@@ -601,6 +608,7 @@
         document.getElementById('product_id').value = d.product_id !== undefined ? (typeof d.product_id === 'number' ? '0x' + d.product_id.toString(16) : d.product_id) : '';
         document.getElementById('usage_page').value = d.usage_page !== undefined && d.usage_page !== null ? (typeof d.usage_page === 'number' ? '0x' + d.usage_page.toString(16) : d.usage_page) : '';
         document.getElementById('usage').value = d.usage !== undefined && d.usage !== null ? (typeof d.usage === 'number' ? '0x' + d.usage.toString(16) : d.usage) : '';
+        document.getElementById('protocol').value = d.protocol || 'vendor';
       }
 
       // Layout
@@ -653,6 +661,7 @@
       const device = { vendor_id: vid, product_id: pid };
       if (up !== null && !isNaN(up)) device.usage_page = up;
       if (u !== null && !isNaN(u)) device.usage = u;
+      device.protocol = document.getElementById('protocol').value;
 
       const layout = { rows, cols, knobs: knobsCount };
       const app = { statusbar, log_level };

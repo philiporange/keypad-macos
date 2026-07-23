@@ -74,3 +74,73 @@ def test_custom_hook_overrides_default():
 
     # Standard report falls back to default decoder
     assert decoder.decode(bytes([1, 0, 1])) == KeyEvent(row=0, col=0, pressed=True)
+
+
+def _kb_report(mod: int, *usages: int) -> bytes:
+    """Build a 9-byte keyboard report (report ID 2) as sent by the CH57x pad."""
+    keys = list(usages) + [0] * (6 - len(usages))
+    return bytes([2, mod, 0] + keys)
+
+
+def test_keyboard_decoder_grid_corners():
+    """F13/F16/F21/F24 map to the four corners of a 3x4 grid."""
+    from keypad.events import KeyboardReportDecoder
+
+    decoder = KeyboardReportDecoder(rows=3, cols=4, knobs=2)
+
+    assert decoder.decode(_kb_report(0, 0x68)) == KeyEvent(row=0, col=0, pressed=True)
+    assert decoder.decode(_kb_report(0)) == KeyEvent(row=0, col=0, pressed=False)
+
+    assert decoder.decode(_kb_report(0, 0x6B)) == KeyEvent(row=0, col=3, pressed=True)
+    assert decoder.decode(_kb_report(0)) == KeyEvent(row=0, col=3, pressed=False)
+
+    assert decoder.decode(_kb_report(0, 0x70)) == KeyEvent(row=2, col=0, pressed=True)
+    assert decoder.decode(_kb_report(0)) == KeyEvent(row=2, col=0, pressed=False)
+
+    assert decoder.decode(_kb_report(0, 0x73)) == KeyEvent(row=2, col=3, pressed=True)
+    assert decoder.decode(_kb_report(0)) == KeyEvent(row=2, col=3, pressed=False)
+
+
+def test_keyboard_decoder_knobs():
+    """Ctrl+F13..F18 map to knob 0/1 ccw, press, cw; releases emit nothing."""
+    from keypad.events import KeyboardReportDecoder
+
+    decoder = KeyboardReportDecoder(rows=3, cols=4, knobs=2)
+
+    assert decoder.decode(_kb_report(0x01, 0x68)) == KnobEvent(index=0, direction="ccw")
+    assert decoder.decode(_kb_report(0x01)) is None  # knob release: no event
+    assert decoder.decode(_kb_report(0x01, 0x69)) == KnobEvent(index=0, direction="press")
+    assert decoder.decode(_kb_report(0x01)) is None
+    assert decoder.decode(_kb_report(0x01, 0x6A)) == KnobEvent(index=0, direction="cw")
+    assert decoder.decode(_kb_report(0x01)) is None
+    assert decoder.decode(_kb_report(0x01, 0x6B)) == KnobEvent(index=1, direction="ccw")
+    assert decoder.decode(_kb_report(0x01)) is None
+    assert decoder.decode(_kb_report(0x01, 0x6D)) == KnobEvent(index=1, direction="cw")
+
+
+def test_keyboard_decoder_held_key_no_repeat():
+    """A key held across several reports emits a single press event."""
+    from keypad.events import KeyboardReportDecoder
+
+    decoder = KeyboardReportDecoder(rows=3, cols=4, knobs=2)
+
+    assert decoder.decode(_kb_report(0, 0x68)) == KeyEvent(row=0, col=0, pressed=True)
+    assert decoder.decode(_kb_report(0, 0x68)) is None
+    assert decoder.decode(_kb_report(0, 0x68)) is None
+    assert decoder.decode(_kb_report(0)) == KeyEvent(row=0, col=0, pressed=False)
+
+
+def test_keyboard_decoder_ignores_foreign_reports():
+    """Non-keyboard, short, or out-of-range reports return None."""
+    from keypad.events import KeyboardReportDecoder
+
+    decoder = KeyboardReportDecoder(rows=3, cols=4, knobs=2)
+
+    assert decoder.decode(b"") is None
+    assert decoder.decode(bytes([9, 1, 2])) is None
+    # usage below F13 (ordinary typing) is ignored
+    assert decoder.decode(_kb_report(0, 0x04)) is None
+    # usage beyond the configured grid is ignored
+    decoder2 = KeyboardReportDecoder(rows=1, cols=2, knobs=1)
+    assert decoder2.decode(_kb_report(0, 0x6C)) is None  # F17 > 1x2 grid
+    assert decoder2.decode(_kb_report(0x01, 0x6B)) is None  # knob 1 > 1 knob

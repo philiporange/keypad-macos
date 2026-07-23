@@ -6,7 +6,7 @@ delegates to a user-supplied custom decoding function.
 """
 
 from dataclasses import dataclass
-from typing import Callable, Optional, Union
+from typing import Callable, List, Optional, Union
 
 
 @dataclass
@@ -84,3 +84,78 @@ class ReportDecoder:
             return KnobEvent(index=knob_index, direction=dir_map[dir_val])
 
         return None
+
+
+class KeyboardReportDecoder:
+    """Decodes standard HID keyboard reports from a keypad programmed to emit
+    F13..F24 for grid keys and Ctrl+F13.. for knob actions.
+
+    Expected programming (via e.g. ch57x-keyboard-tool):
+    - Grid keys send plain F13..F24 (HID usages 0x68..0x73), row-major.
+    - Knob N sends Ctrl+F(13 + 3N) for ccw, Ctrl+F(14 + 3N) for press,
+      Ctrl+F(15 + 3N) for cw.
+
+    Reports are stateful (a report lists all keys currently held), so the
+    decoder tracks the previous key set and emits an event only on change.
+    """
+
+    F13_USAGE = 0x68  # HID usage of F13; F14..F24 follow contiguously
+    CTRL_MASK = 0x11  # left or right Ctrl modifier bits
+    KNOB_DIRECTIONS = ("ccw", "press", "cw")
+
+    def __init__(self, rows: int = 0, cols: int = 0, knobs: int = 0):
+        self.rows = rows
+        self.cols = cols
+        self.knobs = knobs
+        self._held: set = set()
+
+    def decode(self, data: bytes) -> Optional[Union[KeyEvent, KnobEvent]]:
+        """Decode a raw keyboard report into a KeyEvent, KnobEvent, or None."""
+        parsed = self._parse_report(data)
+        if parsed is None:
+            return None
+        modifier, usages = parsed
+
+        current = {(modifier & self.CTRL_MASK != 0, u) for u in usages}
+        pressed = current - self._held
+        released = self._held - current
+        self._held = current
+
+        # A report carries at most one change in practice; prefer new presses.
+        for ctrl, usage in pressed:
+            event = self._event_for(ctrl, usage, pressed=True)
+            if event is not None:
+                return event
+        for ctrl, usage in released:
+            event = self._event_for(ctrl, usage, pressed=False)
+            # Knob rotations/presses have no release semantics.
+            if isinstance(event, KeyEvent):
+                return event
+        return None
+
+    def _parse_report(self, data: bytes) -> Optional[tuple]:
+        """Extract (modifier, key usages) from a report, with or without a report ID."""
+        if not data:
+            return None
+        if len(data) >= 9 and data[0] in (1, 2):
+            # report ID, modifier, reserved, 6 key usages
+            return data[1], [u for u in data[3:9] if u]
+        if len(data) == 8:
+            # modifier, reserved, 6 key usages (no report ID)
+            return data[0], [u for u in data[2:8] if u]
+        return None
+
+    def _event_for(self, ctrl: bool, usage: int, pressed: bool) -> Optional[Union[KeyEvent, KnobEvent]]:
+        index = usage - self.F13_USAGE
+        if index < 0:
+            return None
+        if ctrl:
+            knob_index, direction = divmod(index, len(self.KNOB_DIRECTIONS))
+            if knob_index >= self.knobs:
+                return None
+            if not pressed:
+                return None
+            return KnobEvent(index=knob_index, direction=self.KNOB_DIRECTIONS[direction])
+        if self.cols <= 0 or index >= self.rows * self.cols:
+            return None
+        return KeyEvent(row=index // self.cols, col=index % self.cols, pressed=pressed)

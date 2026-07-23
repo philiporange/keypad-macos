@@ -35,6 +35,10 @@ class Device:
     product_id: int
     usage_page: Optional[int] = None
     usage: Optional[int] = None
+    protocol: str = "vendor"  # 'vendor' (private 01/02 reports) | 'keyboard' (standard HID keyboard reports)
+
+
+VALID_PROTOCOLS = {"vendor", "keyboard"}
 
 
 @dataclass
@@ -179,11 +183,16 @@ def load_config(path: Union[str, Path]) -> Config:
     if usage is not None and not isinstance(usage, int):
         raise ConfigError("Device usage must be an integer")
 
+    protocol = device_table.get("protocol", "vendor")
+    if not isinstance(protocol, str) or protocol not in VALID_PROTOCOLS:
+        raise ConfigError(f"Device protocol must be one of {sorted(VALID_PROTOCOLS)}, got {protocol}")
+
     device = Device(
         vendor_id=vendor_id,
         product_id=product_id,
         usage_page=usage_page,
         usage=usage,
+        protocol=protocol,
     )
 
     # Validate [layout]

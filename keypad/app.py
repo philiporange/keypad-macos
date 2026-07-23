@@ -18,7 +18,7 @@ from typing import Union
 
 from . import actions
 from .config import Action, Config, ConfigError, load_config
-from .events import KeyEvent, KnobEvent, ReportDecoder
+from .events import KeyboardReportDecoder, KeyEvent, KnobEvent, ReportDecoder
 from .listener import Listener, learn, list_devices
 
 logger = logging.getLogger("keypad")
@@ -68,13 +68,19 @@ def handle_event(event: Union[KeyEvent, KnobEvent], cfg: Config) -> None:
                 break
 
 
+def make_decoder(cfg: Config) -> Union[ReportDecoder, KeyboardReportDecoder]:
+    """Build the report decoder matching the configured device protocol."""
+    decoder_cls = KeyboardReportDecoder if cfg.device.protocol == "keyboard" else ReportDecoder
+    return decoder_cls(rows=cfg.layout.rows, cols=cfg.layout.cols, knobs=cfg.layout.knobs)
+
+
 def run_headless(config_path: str) -> None:
     """Run macro keypad listener loop in headless mode (no statusbar)."""
     cfg = load_config(config_path)
     logging.basicConfig(level=getattr(logging, cfg.log_level, logging.INFO))
     logger.info("Starting keypad in headless mode...")
 
-    decoder = ReportDecoder(rows=cfg.layout.rows, cols=cfg.layout.cols, knobs=cfg.layout.knobs)
+    decoder = make_decoder(cfg)
 
     def on_event(ev):
         handle_event(ev, cfg)
@@ -159,11 +165,7 @@ def run_statusbar(config_path: str) -> None:
         def setup_listener(self):
             if self.listener:
                 self.listener.stop()
-            decoder = ReportDecoder(
-                rows=self.cfg.layout.rows,
-                cols=self.cfg.layout.cols,
-                knobs=self.cfg.layout.knobs,
-            )
+            decoder = make_decoder(self.cfg)
 
             def on_event(ev):
                 handle_event(ev, self.cfg)
@@ -201,7 +203,7 @@ def cmd_check_config(config_path: str) -> None:
         cfg = load_config(config_path)
         print(f"Configuration valid: {config_path}")
         print(f"Device: 0x{cfg.device.vendor_id:04x}:0x{cfg.device.product_id:04x} "
-              f"(usage_page={cfg.device.usage_page}, usage={cfg.device.usage})")
+              f"(usage_page={cfg.device.usage_page}, usage={cfg.device.usage}, protocol={cfg.device.protocol})")
         print(f"Layout: {cfg.layout.rows}x{cfg.layout.cols} grid, {cfg.layout.knobs} knobs")
         print(f"App Settings: statusbar={cfg.statusbar}, log_level={cfg.log_level}\n")
         print("Key Bindings:")

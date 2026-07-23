@@ -90,6 +90,9 @@ def dumps_toml(data: dict) -> str:
             lines.append(f"usage = 0x{u:04x}")
         else:
             lines.append(f"usage = {u}")
+
+    if dev.get("protocol"):
+        lines.append(f'protocol = "{dev["protocol"]}"')
     lines.append("")
 
     # [layout]
@@ -197,6 +200,7 @@ def _create_request_handler(config_path: str, on_saved: Optional[Callable[[], No
                             "product_id": cfg.device.product_id,
                             "usage_page": cfg.device.usage_page,
                             "usage": cfg.device.usage,
+                            "protocol": cfg.device.protocol,
                         },
                         "layout": {
                             "rows": cfg.layout.rows,

@@ -6,6 +6,12 @@ vendor_id = 0x1234
 product_id = 0x5678
 usage_page = 0xff00
 usage = 0x0001
+# protocol selects the report decoder:
+#   "vendor"   (default): private reports — 01 <key> <pressed> / 02 <knob> <dir>
+#   "keyboard": standard HID keyboard reports from a pad programmed to emit
+#               F13..F24 for grid keys and Ctrl+F13.. for knobs
+#               (e.g. a CH57x pad programmed with ch57x-keyboard-tool)
+protocol = "vendor"
 
 [layout]
 rows = 3
