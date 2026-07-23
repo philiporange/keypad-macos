@@ -212,6 +212,13 @@ public enum AppMain {
         app.setActivationPolicy(.regular)
         let controller = ConfigWindowController(configPath: configPath)
         controller.show()
+        // Standalone mode has no menu bar item to return to: closing the
+        // window (via the close button, Save, or Revert) quits the process.
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: nil, queue: .main
+        ) { _ in
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
         app.run()
     }
 }

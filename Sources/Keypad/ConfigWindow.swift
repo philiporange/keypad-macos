@@ -785,6 +785,7 @@ public struct ConfigView: View {
                 Spacer()
                 Button("Revert") {
                     model.reloadFromDisk()
+                    closeWindow()
                 }
                 Button("Save") {
                     saveConfig()
@@ -892,10 +893,17 @@ public struct ConfigView: View {
 
             onSaved?()
             model.reloadFromDisk()
+            closeWindow()
         } catch {
             errorMessage = error.localizedDescription
             showErrorAlert = true
         }
+    }
+
+    /// Close (hide) the hosting window; it is reused on the next Configure….
+    /// Only called on success paths — validation errors keep it open.
+    private func closeWindow() {
+        NSApp.windows.first { $0.title == "Keypad Configuration" }?.close()
     }
 
     // MARK: - Import / Export
