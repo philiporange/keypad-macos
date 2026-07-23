@@ -1,5 +1,8 @@
 # Keypad
 
+<img src="assets/icon_rounded.png" width="128" alt="Keypad icon">
+
+
 A lightweight macOS menu-bar app (native Swift) for mapping custom USB and Bluetooth macro keypads (N x M key grid plus K rotary knobs) to user-defined system actions.
 
 ## Features
