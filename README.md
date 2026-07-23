@@ -10,7 +10,23 @@ A lightweight macOS menu-bar app (native Swift) for mapping custom USB and Bluet
 - **Menu Bar Status Item**: Template icon with Configure/Reload/Quit; devices reconnect automatically via IOHIDManager.
 - **Diagnostic CLI**: Subcommands to validate config, list connected HID devices, and learn raw report formats.
 
-## Build & Install
+## Install
+
+### Prebuilt app
+
+A built and signed copy of the app ships in [`dist/`](dist/). Unzip it and
+move `Keypad.app` to `/Applications`:
+
+```bash
+ditto -x -k dist/Keypad-2.0.zip /Applications
+open -a Keypad
+```
+
+The bundle is signed with an Apple Development certificate (not notarized),
+so on another Mac Gatekeeper will block the first launch — right-click the
+app and choose **Open** to bypass it once.
+
+### Build from source
 
 Requires Xcode command-line tools (Swift 6). Build the binary, assemble the
 signed app bundle, and install it to `/Applications`:
