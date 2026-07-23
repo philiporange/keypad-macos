@@ -7,6 +7,7 @@ import Foundation
 import Observation
 import SwiftUI
 import TOMLKit
+import UniformTypeIdentifiers
 
 // MARK: - Action Model Error
 
@@ -775,6 +776,12 @@ public struct ConfigView: View {
             Divider()
 
             HStack {
+                Button("Import…") {
+                    importConfig()
+                }
+                Button("Export…") {
+                    exportConfig()
+                }
                 Spacer()
                 Button("Revert") {
                     model.reloadFromDisk()
@@ -793,79 +800,91 @@ public struct ConfigView: View {
         }
     }
 
-    private func saveConfig() {
-        do {
-            let parsedVendorID = try parseHexOrDecimal(model.vendorHex, name: "Vendor ID")
-            let parsedProductID = try parseHexOrDecimal(model.productHex, name: "Product ID")
-            let parsedUsagePage = try parseOptionalHexOrDecimal(model.usagePageHex, name: "Usage page")
-            let parsedUsage = try parseOptionalHexOrDecimal(model.usageHex, name: "Usage")
+    /// Collect the editor state into TOML text, validated through the real
+    /// config parser. Throws with a user-readable message on any invalid
+    /// field. Shared by Save and Export.
+    private func buildValidatedTOML() throws -> String {
+        let parsedVendorID = try parseHexOrDecimal(model.vendorHex, name: "Vendor ID")
+        let parsedProductID = try parseHexOrDecimal(model.productHex, name: "Product ID")
+        let parsedUsagePage = try parseOptionalHexOrDecimal(model.usagePageHex, name: "Usage page")
+        let parsedUsage = try parseOptionalHexOrDecimal(model.usageHex, name: "Usage")
 
-            guard model.rows > 0 && model.cols > 0 && model.knobs >= 0 else {
-                throw ActionModelError("Rows, cols, and knobs dimensions must be valid positive integers")
-            }
+        guard model.rows > 0 && model.cols > 0 && model.knobs >= 0 else {
+            throw ActionModelError("Rows, cols, and knobs dimensions must be valid positive integers")
+        }
 
-            // Collect keys
-            var keysDump: [(row: Int, col: Int, action: KeypadAction?)] = []
-            for r in 0..<min(model.rows, model.keysGrid.count) {
-                let rowGrid = model.keysGrid[r]
-                for c in 0..<min(model.cols, rowGrid.count) {
-                    let actionModel = rowGrid[c]
-                    let action = try actionModel.toKeypadAction()
-                    if action != nil {
-                        keysDump.append((row: r, col: c, action: action))
-                    }
+        // Collect keys
+        var keysDump: [(row: Int, col: Int, action: KeypadAction?)] = []
+        for r in 0..<min(model.rows, model.keysGrid.count) {
+            let rowGrid = model.keysGrid[r]
+            for c in 0..<min(model.cols, rowGrid.count) {
+                let actionModel = rowGrid[c]
+                let action = try actionModel.toKeypadAction()
+                if action != nil {
+                    keysDump.append((row: r, col: c, action: action))
                 }
             }
+        }
 
-            // Collect knobs
-            var knobsDump: [(index: Int, onCW: KeypadAction?, onCCW: KeypadAction?, onPress: KeypadAction?)] = []
-            for idx in 0..<min(model.knobs, model.knobsList.count) {
-                let kn = model.knobsList[idx]
-                let cw = try kn.onCW.toKeypadAction()
-                let ccw = try kn.onCCW.toKeypadAction()
-                let pr = try kn.onPress.toKeypadAction()
-                if cw != nil || ccw != nil || pr != nil {
-                    knobsDump.append((index: idx, onCW: cw, onCCW: ccw, onPress: pr))
-                }
+        // Collect knobs
+        var knobsDump: [(index: Int, onCW: KeypadAction?, onCCW: KeypadAction?, onPress: KeypadAction?)] = []
+        for idx in 0..<min(model.knobs, model.knobsList.count) {
+            let kn = model.knobsList[idx]
+            let cw = try kn.onCW.toKeypadAction()
+            let ccw = try kn.onCCW.toKeypadAction()
+            let pr = try kn.onPress.toKeypadAction()
+            if cw != nil || ccw != nil || pr != nil {
+                knobsDump.append((index: idx, onCW: cw, onCCW: ccw, onPress: pr))
             }
+        }
 
-            let deviceDump = DeviceConfig(
+        let dump = ConfigDump(
+            device: DeviceConfig(
                 vendorID: parsedVendorID,
                 productID: parsedProductID,
                 usagePage: parsedUsagePage,
                 usage: parsedUsage,
                 protocolName: model.protocolName
-            )
-            let layoutDump = LayoutConfig(rows: model.rows, cols: model.cols, knobs: model.knobs)
-            let appDump = AppDump(
+            ),
+            layout: LayoutConfig(rows: model.rows, cols: model.cols, knobs: model.knobs),
+            app: AppDump(
                 statusbar: model.statusbar,
                 logLevel: model.logLevel,
                 icon: model.icon.isEmpty ? nil : model.icon,
                 launchAtLogin: model.launchAtLogin
-            )
+            ),
+            keys: keysDump,
+            knobs: knobsDump
+        )
 
-            let dump = ConfigDump(
-                device: deviceDump,
-                layout: layoutDump,
-                app: appDump,
-                keys: keysDump,
-                knobs: knobsDump
-            )
+        let tomlText = dumpsTOML(dump)
 
-            let tomlText = dumpsTOML(dump)
+        // Round-trip through the real parser so Save/Export can never
+        // produce a file the daemon would refuse to load.
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".toml")
+        try tomlText.write(to: tempURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+        _ = try loadConfig(atPath: tempURL.path)
 
-            // Write to temp file and validate
-            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".toml")
-            try tomlText.write(to: tempURL, atomically: true, encoding: .utf8)
+        return tomlText
+    }
 
-            _ = try loadConfig(atPath: tempURL.path)
+    /// Atomically replace the active config file with the given TOML text.
+    private func writeActiveConfig(_ tomlText: String) throws {
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".toml")
+        try tomlText.write(to: tempURL, atomically: true, encoding: .utf8)
+        let destURL = URL(fileURLWithPath: (configPath as NSString).expandingTildeInPath)
+        if FileManager.default.fileExists(atPath: destURL.path) {
+            _ = try FileManager.default.replaceItemAt(destURL, withItemAt: tempURL)
+        } else {
+            try FileManager.default.moveItem(at: tempURL, to: destURL)
+        }
+    }
 
-            let destURL = URL(fileURLWithPath: (configPath as NSString).expandingTildeInPath)
-            if FileManager.default.fileExists(atPath: destURL.path) {
-                _ = try FileManager.default.replaceItemAt(destURL, withItemAt: tempURL)
-            } else {
-                try FileManager.default.moveItem(at: tempURL, to: destURL)
-            }
+    private func saveConfig() {
+        do {
+            let tomlText = try buildValidatedTOML()
+            try writeActiveConfig(tomlText)
 
             if LoginItem.isAvailable {
                 LoginItem.setEnabled(model.launchAtLogin)
@@ -875,6 +894,58 @@ public struct ConfigView: View {
             model.reloadFromDisk()
         } catch {
             errorMessage = error.localizedDescription
+            showErrorAlert = true
+        }
+    }
+
+    // MARK: - Import / Export
+
+    private func exportConfig() {
+        let tomlText: String
+        do {
+            tomlText = try buildValidatedTOML()
+        } catch {
+            errorMessage = error.localizedDescription
+            showErrorAlert = true
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.title = "Export Keypad Configuration"
+        panel.nameFieldStringValue = "keypad.toml"
+        if let tomlType = UTType(filenameExtension: "toml") {
+            panel.allowedContentTypes = [tomlType]
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            try tomlText.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            errorMessage = "Export failed: \(error.localizedDescription)"
+            showErrorAlert = true
+        }
+    }
+
+    private func importConfig() {
+        let panel = NSOpenPanel()
+        panel.title = "Import Keypad Configuration"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if let tomlType = UTType(filenameExtension: "toml") {
+            panel.allowedContentTypes = [tomlType]
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            // Validate before touching the active config; the imported
+            // file's own text is preserved verbatim (comments included).
+            _ = try loadConfig(atPath: url.path)
+            let tomlText = try String(contentsOf: url, encoding: .utf8)
+            try writeActiveConfig(tomlText)
+            onSaved?()
+            model.reloadFromDisk()
+        } catch {
+            errorMessage = "Import failed: \(error)"
             showErrorAlert = true
         }
     }
