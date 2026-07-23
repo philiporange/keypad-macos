@@ -1,21 +1,30 @@
 # Keypad
 
-A lightweight macOS background utility for mapping custom USB and Bluetooth macro keypads (N x M key grid plus K rotary knobs) to user-defined system actions.
+A lightweight macOS menu-bar app (native Swift) for mapping custom USB and Bluetooth macro keypads (N x M key grid plus K rotary knobs) to user-defined system actions.
 
 ## Features
 
-- **Flexible Action Mappings**: Map keypresses and knob rotations/clicks to key macros (Quartz CGEvent), media controls (volume, brightness, playback), app launches, python/shell scripts, arbitrary shell commands, and [AeroSpace](https://github.com/nikitabobko/AeroSpace) window-manager commands.
-- **Menu Bar Status Bar**: Optional menu bar status item with fast config reloading.
-- **Robust Reconnection**: Background thread auto-reconnects with exponential backoff if the keypad device is unplugged or disconnected.
-- **Diagnostic Utilities**: Built-in CLI commands to list connected HID devices and learn raw report formats.
+- **Flexible Action Mappings**: Map keypresses and knob rotations/clicks to key macros (CGEvent), media controls (volume, brightness, playback), app launches, scripts, shell commands, [AeroSpace](https://github.com/nikitabobko/AeroSpace) window-manager commands, URLs, typed text, AppleScript, macOS Shortcuts, system commands (lock screen, display sleep, dark mode, ...), absolute volume, notifications, and multi-step sequences.
+- **Native Configuration Window**: SwiftUI editor with General/Keys/Knobs tabs covering every action type.
+- **Launch at Login**: One toggle, backed by `SMAppService` — no login-item scripting, no permission prompts.
+- **Menu Bar Status Item**: Template icon with Configure/Reload/Quit; devices reconnect automatically via IOHIDManager.
+- **Diagnostic CLI**: Subcommands to validate config, list connected HID devices, and learn raw report formats.
 
-## Installation
+## Build & Install
 
-Install dependencies from `requirements.txt`:
+Requires Xcode command-line tools (Swift 6). Build the binary, assemble the
+signed app bundle, and install it to `/Applications`:
 
 ```bash
-pip install -r requirements.txt
+./scripts/build_app.sh
+open -a Keypad
 ```
+
+The script signs with an Apple Development identity (override with
+`KEYPAD_SIGN_IDENTITY`) so that TCC permission grants survive rebuilds;
+ad-hoc signing would pin them to a single build's cdhash.
+
+Run tests with `swift test`.
 
 ## Configuration
 
@@ -26,7 +35,20 @@ mkdir -p ~/.config/keypad
 cp keypad.example.toml ~/.config/keypad/keypad.toml
 ```
 
-Edit `~/.config/keypad/keypad.toml` to define your device parameters (`vendor_id`, `product_id`, `usage_page`, `usage`), layout grid size, and action bindings.
+Edit `~/.config/keypad/keypad.toml` to define your device parameters (`vendor_id`, `product_id`, `usage_page`, `usage`, `protocol`), layout grid size, and action bindings — `keypad.example.toml` documents every action type.
+
+### Configuration window
+
+The easiest way to edit bindings is the native config window: click the
+menu-bar icon and choose **Configure…**. It has a General tab (launch at
+login, menu-bar icon, log level, device and layout settings), a Keys tab
+with a clickable NxM key grid, and a Knobs tab with per-knob cw/ccw/press
+editors — all covering every action type. Saving validates the config and
+the running app reloads its bindings immediately. Without the menu bar:
+
+```bash
+/Applications/Keypad.app/Contents/MacOS/Keypad configure
+```
 
 ### AeroSpace window-manager actions
 
@@ -51,81 +73,29 @@ Useful commands: `workspace <n>`, `workspace next|prev`, `focus left|right|up|do
 `move left|right`, `fullscreen`, `layout tiles|accordion`, `balance-sizes`,
 `workspace-back-and-forth` — see `aerospace --help` for the full list. The binary
 is found via `PATH`, falling back to the Homebrew locations
-(`/opt/homebrew/bin/aerospace`, `/usr/local/bin/aerospace`), which matters when
-running under launchd's minimal environment.
+(`/opt/homebrew/bin/aerospace`, `/usr/local/bin/aerospace`).
 
-Validate your configuration at any time:
+## CLI
 
-```bash
-python -m keypad.app check-config
-```
-
-### Configuration window
-
-The easiest way to edit bindings is the native config window: click the
-menu-bar icon and choose **Configure…**. It has a General tab (launch at
-login, menu-bar icon, log level, device and layout settings), a Keys tab
-with a clickable NxM key grid, and a Knobs tab with per-knob cw/ccw/press
-editors — all covering every action type. Saving validates the config and
-the running daemon reloads its bindings immediately. Without the menu bar:
+The app binary doubles as a CLI (add an alias if you use it often):
 
 ```bash
-python -m keypad.app configure            # opens the window standalone
-```
-
-## Device Discovery & Learning
-
-List all connected HID devices and their Vendor/Product IDs:
-
-```bash
-python -m keypad.app list-devices
-```
-
-To determine raw report formats for unmapped keypads, use the `learn` command:
-
-```bash
-python -m keypad.app learn --seconds 15
+KEYPAD=/Applications/Keypad.app/Contents/MacOS/Keypad
+$KEYPAD check-config              # validate config and print bindings
+$KEYPAD list-devices              # list connected HID devices
+$KEYPAD learn --seconds 15        # print raw reports to map a new pad
+$KEYPAD run --no-statusbar        # headless daemon, no menu bar item
 ```
 
 ## Required macOS System Permissions
 
-To capture raw HID input reports and synthesize global keyboard shortcuts on macOS, grant the following permissions in **System Settings > Privacy & Security**:
+Granted once on first run (the app requests both, and the grants persist
+across rebuilds thanks to the stable code-signing identity):
 
-1. **Input Monitoring**: Allows reading raw HID input reports from USB/Bluetooth keypads.
-2. **Accessibility**: Allows synthesizing global key combination shortcuts and media events via Quartz CGEvents.
+1. **Input Monitoring**: reading raw HID input reports from USB/Bluetooth keypads.
+2. **Accessibility**: synthesizing key macros and media events via CGEvents.
 
-## Launch at Login (launchd)
-
-To automatically launch the keypad daemon upon user login, save the following property list snippet to `~/Library/LaunchAgents/com.user.keypad.plist`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.user.keypad</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/local/bin/python3</string>
-        <string>-m</string>
-        <string>keypad.app</string>
-        <string>run</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/tmp/keypad.stdout.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/keypad.stderr.log</string>
-</dict>
-</plist>
-```
-
-Load the LaunchAgent service:
-
-```bash
-launchctl load ~/Library/LaunchAgents/com.user.keypad.plist
-```
+System commands `show_desktop` and `toggle_dark_mode` additionally use
+System Events (AppleScript) and prompt for Automation on first use.
+`display_sleep` and `system_sleep` run via a one-shot launchd agent —
+`pmset` fails with error 1006 when called from a daemon child; see NOTES.md.
