@@ -88,7 +88,12 @@ public struct KeypadCLI {
         case "run":
             do {
                 let cfg = try loadConfig(atPath: configPath)
-                if cfg.statusbar && !noStatusbar {
+                // The AppKit shell runs even with statusbar = false (the
+                // delegate just skips the status item) so that reopening
+                // the app can summon the config window. --no-statusbar
+                // forces a bare headless loop with no UI at all.
+                if !noStatusbar {
+                    _ = cfg
                     AppMain.runStatusbar(configPath: configPath)
                 } else {
                     let decoder = makeDecoder(for: cfg)

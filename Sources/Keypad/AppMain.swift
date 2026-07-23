@@ -31,13 +31,10 @@ private final class StatusbarAppDelegate: NSObject, NSApplicationDelegate {
             CGRequestPostEventAccess()
         }
 
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-
         do {
             let cfg = try loadConfig(atPath: configPath)
             self.config = cfg
-            updateStatusItemIcon(cfg: cfg)
-            setupMenu()
+            updateStatusItem(cfg: cfg)
             setupListener(cfg: cfg)
 
             if LoginItem.isAvailable {
@@ -45,8 +42,25 @@ private final class StatusbarAppDelegate: NSObject, NSApplicationDelegate {
             }
         } catch {
             logger.error("Failed to load configuration at startup: \(error.localizedDescription)")
+            statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             statusItem?.button?.title = "Keypad"
             setupErrorMenu()
+        }
+    }
+
+    /// Create or remove the status item to match the config's statusbar
+    /// setting. With the item hidden the app stays reachable by launching
+    /// Keypad again (see applicationShouldHandleReopen).
+    private func updateStatusItem(cfg: Config) {
+        if cfg.statusbar {
+            if statusItem == nil {
+                statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+                setupMenu()
+            }
+            updateStatusItemIcon(cfg: cfg)
+        } else if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
         }
     }
 
@@ -179,8 +193,7 @@ private final class StatusbarAppDelegate: NSObject, NSApplicationDelegate {
         do {
             let cfg = try loadConfig(atPath: configPath)
             self.config = cfg
-            updateStatusItemIcon(cfg: cfg)
-            setupMenu()
+            updateStatusItem(cfg: cfg)
             setupListener(cfg: cfg)
             logger.info("Configuration loaded/reloaded.")
         } catch {
@@ -191,6 +204,14 @@ private final class StatusbarAppDelegate: NSObject, NSApplicationDelegate {
     @objc private func quitApp() {
         listener?.stop()
         NSApp.terminate(nil)
+    }
+
+    /// Launching the app again (Spotlight, Finder) while it is running
+    /// opens the config window — the only way in when the menu bar icon
+    /// is hidden (statusbar = false).
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        showConfigureWindow()
+        return true
     }
 }
 

@@ -48,7 +48,11 @@ offers a dropdown of preset commands with a **Custom…** free-text option:
 common AeroSpace commands, common macro chords, your installed
 applications, and your Shortcuts (discovered via `shortcuts list`).
 Saving validates the config and the running app reloads its bindings
-immediately. Without the menu bar:
+immediately.
+
+If the menu bar icon is hidden (`statusbar = false`), just launch Keypad
+again (Spotlight or Applications) — reopening the running app summons the
+config window. There is also a standalone mode:
 
 ```bash
 /Applications/Keypad.app/Contents/MacOS/Keypad configure
