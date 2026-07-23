@@ -34,10 +34,22 @@ def _describe_action(action: Action) -> str:
         return f"app(name={action.name}, path={action.path})"
     elif action.type == "script":
         return f"script(path={action.path}, args={action.args})"
-    elif action.type == "shell":
-        return f"shell({action.command})"
-    elif action.type == "aerospace":
-        return f"aerospace({action.command})"
+    elif action.type in ("shell", "aerospace", "system"):
+        return f"{action.type}({action.command})"
+    elif action.type == "url":
+        return f"url({action.url})"
+    elif action.type == "text":
+        return f"text({action.text!r})"
+    elif action.type == "applescript":
+        return f"applescript({(action.source or '').strip().splitlines()[0]}...)"
+    elif action.type == "shortcut":
+        return f"shortcut({action.name})"
+    elif action.type == "volume":
+        return f"volume({action.level})"
+    elif action.type == "notification":
+        return f"notification({action.title or ''}: {action.text})"
+    elif action.type == "sequence":
+        return f"sequence({len(action.steps)} steps, delay={action.delay})"
     return f"unknown({action.type})"
 
 
@@ -137,30 +149,31 @@ def run_statusbar(config_path: str) -> None:
             )
             self.menu = ["Configure…", "Reload Config", "Quit"]
             self.listener = None
-            self.web = None
+            self.config_window = None
             self.reload_config()
+            self._sync_login_item(cfg)
 
-        def _on_config_saved(self):
-            # Called from the web server's thread: refresh bindings and the
-            # listener only — menu-bar UI (icon) is left to the main thread.
+        def _sync_login_item(self, cfg):
+            # Make the login item match the config on startup, so editing the
+            # TOML by hand also takes effect.
+            from . import loginitem
+
             try:
-                self.cfg = load_config(self.config_path)
-                self.setup_listener()
-                logger.info("Configuration saved from web editor; bindings reloaded.")
+                loginitem.set_enabled(cfg.launch_at_login)
             except Exception as e:
-                logger.error("Failed to apply saved configuration: %s", e)
+                logger.warning("Could not sync launch-at-login state: %s", e)
 
         @rumps.clicked("Configure…")
         def configure(self, _=None):
-            import webbrowser
+            # The config window runs on the main thread alongside rumps'
+            # NSApplication run loop, so a full reload (icon included) is safe.
+            from .configwindow import ConfigWindowController
 
-            from .webconfig import ConfigServer
-
-            if self.web is None:
-                self.web = ConfigServer(self.config_path, on_saved=self._on_config_saved)
-                self.web.start()
-                logger.info("Config editor at %s", self.web.url)
-            webbrowser.open(self.web.url)
+            if self.config_window is None:
+                self.config_window = ConfigWindowController(
+                    self.config_path, on_saved=self.reload_config
+                )
+            self.config_window.show()
 
         def setup_listener(self):
             if self.listener:
@@ -189,8 +202,6 @@ def run_statusbar(config_path: str) -> None:
         def quit_app(self, _=None):
             if self.listener:
                 self.listener.stop()
-            if self.web:
-                self.web.stop()
             rumps.quit_application()
 
     app = KeypadApp(config_path)
@@ -227,26 +238,24 @@ def cmd_check_config(config_path: str) -> None:
         sys.exit(1)
 
 
-def cmd_configure(config_path: str, port: int, open_browser: bool) -> None:
-    """Serve the browser config editor until interrupted."""
-    import webbrowser
+def cmd_configure(config_path: str) -> None:
+    """Open the native configuration window standalone (Ctrl-C to stop)."""
+    from AppKit import NSApplication, NSApplicationActivationPolicyRegular
+    from PyObjCTools import AppHelper
 
-    from .webconfig import ConfigServer
+    from .configwindow import ConfigWindowController
 
     def on_saved():
-        print("Saved. (The running daemon picks it up via its own editor or Reload Config.)")
+        print("Saved. (A running daemon reloads via its own editor or Reload Config.)")
 
-    server = ConfigServer(config_path, on_saved=on_saved, port=port)
-    server.start()
-    print(f"Config editor: {server.url}  (Ctrl-C to stop)")
-    if open_browser:
-        webbrowser.open(server.url)
+    app = NSApplication.sharedApplication()
+    app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
+    controller = ConfigWindowController(config_path, on_saved=on_saved)
+    controller.show()
     try:
-        signal.pause()
+        AppHelper.runEventLoop()
     except KeyboardInterrupt:
         pass
-    finally:
-        server.stop()
 
 
 def cmd_list_devices() -> None:
@@ -311,10 +320,8 @@ def main() -> None:
     check_parser.add_argument("--config", default=default_config, help="Path to TOML configuration file")
 
     # Subcommand 'configure'
-    cfg_parser = subparsers.add_parser("configure", help="Open the browser-based config editor")
+    cfg_parser = subparsers.add_parser("configure", help="Open the configuration window")
     cfg_parser.add_argument("--config", default=default_config, help="Path to TOML configuration file")
-    cfg_parser.add_argument("--port", type=int, default=0, help="Port to serve on (default: ephemeral)")
-    cfg_parser.add_argument("--no-open", action="store_true", help="Do not open the browser automatically")
 
     args = parser.parse_args()
 
@@ -344,7 +351,7 @@ def main() -> None:
         cmd_check_config(args.config)
 
     elif args.command == "configure":
-        cmd_configure(args.config, args.port, not args.no_open)
+        cmd_configure(args.config)
 
 
 if __name__ == "__main__":

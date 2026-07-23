@@ -19,13 +19,20 @@ class ConfigError(Exception):
 @dataclass
 class Action:
     """Represents an executable action triggered by a key or knob event."""
-    type: str  # 'macro' | 'media' | 'app' | 'script' | 'shell' | 'aerospace'
+    type: str  # one of VALID_ACTION_TYPES
     keys: Optional[Union[str, List[str]]] = None
     control: Optional[str] = None
     name: Optional[str] = None
     path: Optional[str] = None
     args: List[str] = field(default_factory=list)
     command: Optional[str] = None
+    url: Optional[str] = None
+    text: Optional[str] = None
+    source: Optional[str] = None
+    title: Optional[str] = None
+    level: Optional[int] = None
+    steps: List["Action"] = field(default_factory=list)
+    delay: float = 0.0
 
 
 @dataclass
@@ -76,6 +83,7 @@ class Config:
     statusbar: bool = True
     log_level: str = "INFO"
     icon: Optional[str] = None  # menu-bar icon path; None uses the bundled asset
+    launch_at_login: bool = False
 
 
 VALID_MEDIA_CONTROLS = {
@@ -89,7 +97,33 @@ VALID_MEDIA_CONTROLS = {
     "brightness_down",
 }
 
-VALID_ACTION_TYPES = {"macro", "media", "app", "script", "shell", "aerospace"}
+VALID_ACTION_TYPES = {
+    "macro",        # synthesize a keyboard chord (e.g. cmd+shift+4)
+    "media",        # media/brightness/volume keys
+    "app",          # launch/activate an application
+    "script",       # run an executable with args
+    "shell",        # run a shell command line
+    "aerospace",    # AeroSpace window-manager command
+    "url",          # open a URL in the default handler
+    "text",         # type a literal text string
+    "applescript",  # run inline AppleScript source
+    "shortcut",     # run a macOS Shortcuts shortcut by name
+    "system",       # system command (lock screen, display sleep, ...)
+    "volume",       # set absolute output volume (0-100)
+    "notification", # show a user notification
+    "sequence",     # run a list of actions in order
+}
+
+VALID_SYSTEM_COMMANDS = {
+    "lock_screen",
+    "display_sleep",
+    "system_sleep",
+    "screensaver",
+    "mission_control",
+    "launchpad",
+    "show_desktop",
+    "toggle_dark_mode",
+}
 
 
 def _parse_action(data: Any) -> Action:
@@ -145,6 +179,65 @@ def _parse_action(data: Any) -> Action:
                 "Aerospace action requires string 'command' (e.g. 'workspace 3')"
             )
         return Action(type="aerospace", command=command)
+
+    elif action_type == "url":
+        url = data.get("url")
+        if not url or not isinstance(url, str):
+            raise ConfigError("URL action requires string 'url'")
+        return Action(type="url", url=url)
+
+    elif action_type == "text":
+        text = data.get("text")
+        if not text or not isinstance(text, str):
+            raise ConfigError("Text action requires string 'text'")
+        return Action(type="text", text=text)
+
+    elif action_type == "applescript":
+        source = data.get("source")
+        if not source or not isinstance(source, str):
+            raise ConfigError("AppleScript action requires string 'source'")
+        return Action(type="applescript", source=source)
+
+    elif action_type == "shortcut":
+        name = data.get("name")
+        if not name or not isinstance(name, str):
+            raise ConfigError("Shortcut action requires string 'name' (the Shortcuts shortcut name)")
+        return Action(type="shortcut", name=name)
+
+    elif action_type == "system":
+        command = data.get("command")
+        if not command or command not in VALID_SYSTEM_COMMANDS:
+            raise ConfigError(
+                f"System action requires 'command' from {sorted(VALID_SYSTEM_COMMANDS)}, got {command}"
+            )
+        return Action(type="system", command=command)
+
+    elif action_type == "volume":
+        level = data.get("level")
+        if not isinstance(level, int) or isinstance(level, bool) or not (0 <= level <= 100):
+            raise ConfigError(f"Volume action requires integer 'level' 0-100, got {level}")
+        return Action(type="volume", level=level)
+
+    elif action_type == "notification":
+        text = data.get("text")
+        if not text or not isinstance(text, str):
+            raise ConfigError("Notification action requires string 'text'")
+        title = data.get("title")
+        if title is not None and not isinstance(title, str):
+            raise ConfigError("Notification action 'title' must be a string")
+        return Action(type="notification", text=text, title=title)
+
+    elif action_type == "sequence":
+        raw_steps = data.get("steps")
+        if not isinstance(raw_steps, list) or not raw_steps:
+            raise ConfigError("Sequence action requires non-empty 'steps' list of actions")
+        steps = [_parse_action(s) for s in raw_steps]
+        if any(s.type == "sequence" for s in steps):
+            raise ConfigError("Sequence actions cannot be nested")
+        delay = data.get("delay", 0.0)
+        if isinstance(delay, bool) or not isinstance(delay, (int, float)) or delay < 0:
+            raise ConfigError("Sequence 'delay' must be a non-negative number of seconds")
+        return Action(type="sequence", steps=steps, delay=float(delay))
 
     raise ConfigError(f"Unsupported action type: {action_type}")
 
@@ -283,6 +376,10 @@ def load_config(path: Union[str, Path]) -> Config:
     if icon is not None and not isinstance(icon, str):
         raise ConfigError("app.icon must be a string path")
 
+    launch_at_login = app_table.get("launch_at_login", False)
+    if not isinstance(launch_at_login, bool):
+        raise ConfigError("app.launch_at_login must be a boolean")
+
     return Config(
         device=device,
         layout=layout,
@@ -291,4 +388,5 @@ def load_config(path: Union[str, Path]) -> Config:
         statusbar=statusbar,
         log_level=log_level.upper(),
         icon=icon,
+        launch_at_login=launch_at_login,
     )

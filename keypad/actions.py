@@ -6,9 +6,12 @@ scripts, or executing shell commands. OS-specific Quartz calls are lazily import
 """
 
 import logging
+import os
 import shlex
 import shutil
 import subprocess
+import time
+from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 from .config import Action
@@ -204,22 +207,159 @@ def _execute_shell(action: Action) -> None:
     subprocess.run(action.command, shell=True, check=True)
 
 
+def _execute_url(action: Action) -> None:
+    if not action.url:
+        logger.error("URL action missing url")
+        return
+    subprocess.run(["open", action.url], check=True)
+
+
+# CGEventKeyboardSetUnicodeString accepts a limited buffer per event.
+_TEXT_CHUNK = 20
+
+
+def _execute_text(action: Action) -> None:
+    if not action.text:
+        logger.error("Text action missing text")
+        return
+    import Quartz
+    for i in range(0, len(action.text), _TEXT_CHUNK):
+        chunk = action.text[i:i + _TEXT_CHUNK]
+        for down in (True, False):
+            ev = Quartz.CGEventCreateKeyboardEvent(None, 0, down)
+            Quartz.CGEventKeyboardSetUnicodeString(ev, len(chunk), chunk)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
+
+
+def _execute_applescript(action: Action) -> None:
+    if not action.source:
+        logger.error("AppleScript action missing source")
+        return
+    subprocess.run(["/usr/bin/osascript", "-e", action.source], check=True)
+
+
+def _execute_shortcut(action: Action) -> None:
+    if not action.name:
+        logger.error("Shortcut action missing name")
+        return
+    subprocess.run(["/usr/bin/shortcuts", "run", action.name], check=True)
+
+
+def _run_osascript(source: str) -> None:
+    subprocess.run(["/usr/bin/osascript", "-e", source], check=True)
+
+
+def _launchd_oneshot(label: str, argv: list) -> None:
+    """Run a command as a one-shot launchd agent instead of a daemon child.
+
+    Power-management commands (pmset displaysleepnow and friends) fail with
+    error 1006 when the calling process is a descendant of this daemon; see
+    NOTES.md. launchd spawns the command in its own clean context, where it
+    works. The agent plist is created and bootstrapped on first use.
+    """
+    plist = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+    if not plist.exists():
+        program = "".join(f"\t\t<string>{a}</string>\n" for a in argv)
+        plist.parent.mkdir(parents=True, exist_ok=True)
+        plist.write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"'
+            ' "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+            '<plist version="1.0">\n<dict>\n'
+            f"\t<key>Label</key>\n\t<string>{label}</string>\n"
+            f"\t<key>ProgramArguments</key>\n\t<array>\n{program}\t</array>\n"
+            "\t<key>RunAtLoad</key>\n\t<false/>\n"
+            "</dict>\n</plist>\n"
+        )
+    domain = f"gui/{os.getuid()}"
+    subprocess.run(["launchctl", "bootstrap", domain, str(plist)],
+                   capture_output=True)  # already-loaded is fine
+    subprocess.run(["launchctl", "kickstart", f"{domain}/{label}"], check=True)
+
+
+SYSTEM_COMMANDS = {
+    "lock_screen": lambda: subprocess.run(
+        ["/System/Library/PrivateFrameworks/login.framework/Versions/Current/Resources/CGSession",
+         "-suspend"], check=True),
+    "display_sleep": lambda: _launchd_oneshot(
+        "com.keypad.displaysleep", ["/usr/bin/pmset", "displaysleepnow"]),
+    "system_sleep": lambda: _launchd_oneshot(
+        "com.keypad.systemsleep", ["/usr/bin/pmset", "sleepnow"]),
+    "screensaver": lambda: subprocess.run(
+        ["open", "-a", "ScreenSaverEngine"], check=True),
+    "mission_control": lambda: subprocess.run(
+        ["open", "-a", "Mission Control"], check=True),
+    "launchpad": lambda: subprocess.run(
+        ["open", "-a", "Launchpad"], check=True),
+    "show_desktop": lambda: _run_osascript(
+        'tell application "System Events" to key code 103'),
+    "toggle_dark_mode": lambda: _run_osascript(
+        'tell application "System Events" to tell appearance preferences '
+        "to set dark mode to not dark mode"),
+}
+
+
+def _execute_system(action: Action) -> None:
+    handler = SYSTEM_COMMANDS.get(action.command or "")
+    if handler is None:
+        logger.error("Unknown system command: %s", action.command)
+        return
+    handler()
+
+
+def _execute_volume(action: Action) -> None:
+    if action.level is None:
+        logger.error("Volume action missing level")
+        return
+    _run_osascript(f"set volume output volume {int(action.level)}")
+
+
+def _execute_notification(action: Action) -> None:
+    if not action.text:
+        logger.error("Notification action missing text")
+        return
+    source = f"display notification {_applescript_quote(action.text)}"
+    if action.title:
+        source += f" with title {_applescript_quote(action.title)}"
+    _run_osascript(source)
+
+
+def _applescript_quote(s: str) -> str:
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _execute_sequence(action: Action) -> None:
+    for i, step in enumerate(action.steps):
+        if i and action.delay:
+            time.sleep(action.delay)
+        execute(step)
+
+
+_EXECUTORS = {
+    "macro": _execute_macro,
+    "media": _execute_media,
+    "app": _execute_app,
+    "script": _execute_script,
+    "shell": _execute_shell,
+    "aerospace": _execute_aerospace,
+    "url": _execute_url,
+    "text": _execute_text,
+    "applescript": _execute_applescript,
+    "shortcut": _execute_shortcut,
+    "system": _execute_system,
+    "volume": _execute_volume,
+    "notification": _execute_notification,
+    "sequence": _execute_sequence,
+}
+
+
 def execute(action: Action) -> None:
     """Execute configured Action object safely without raising unhandled exceptions."""
     try:
-        if action.type == "macro":
-            _execute_macro(action)
-        elif action.type == "media":
-            _execute_media(action)
-        elif action.type == "app":
-            _execute_app(action)
-        elif action.type == "script":
-            _execute_script(action)
-        elif action.type == "shell":
-            _execute_shell(action)
-        elif action.type == "aerospace":
-            _execute_aerospace(action)
-        else:
+        executor = _EXECUTORS.get(action.type)
+        if executor is None:
             logger.error("Unknown action type: %s", action.type)
+            return
+        executor(action)
     except Exception as e:
         logger.error("Exception occurred executing action type '%s': %s", getattr(action, 'type', None), e)

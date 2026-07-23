@@ -21,6 +21,8 @@ knobs = 2
 [app]
 statusbar = true
 log_level = "INFO"
+# Register the app as a macOS login item so it starts automatically.
+launch_at_login = false
 
 # Key bindings (3x3 grid, 0-indexed)
 
@@ -77,6 +79,39 @@ action = { type = "aerospace", command = "workspace-back-and-forth" }
 row = 2
 col = 2
 action = { type = "aerospace", command = "fullscreen" }
+
+# --- Further action types (bind to any key or knob event) ---
+#
+# Open a URL in the default browser:
+#   action = { type = "url", url = "https://news.ycombinator.com" }
+#
+# Type a literal text string into the focused app:
+#   action = { type = "text", text = "hello@example.com" }
+#
+# Run inline AppleScript:
+#   action = { type = "applescript", source = "tell application \"Music\" to playpause" }
+#
+# Run a macOS Shortcuts shortcut by name:
+#   action = { type = "shortcut", name = "Start Focus Timer" }
+#
+# System commands — one of: lock_screen, display_sleep, system_sleep,
+# screensaver, mission_control, launchpad, show_desktop, toggle_dark_mode.
+# (display_sleep/system_sleep run via a launchd one-shot agent; pmset fails
+# with error 1006 when called directly from the daemon — see NOTES.md.)
+#   action = { type = "system", command = "display_sleep" }
+#
+# Set absolute output volume (0-100):
+#   action = { type = "volume", level = 25 }
+#
+# Show a notification:
+#   action = { type = "notification", title = "Keypad", text = "Hello!" }
+#
+# Run several actions in order, with an optional delay between steps:
+#   action = { type = "sequence", delay = 0.3, steps = [
+#     { type = "app", name = "iTerm" },
+#     { type = "text", text = "make deploy" },
+#     { type = "macro", keys = "return" },
+#   ] }
 
 
 # Knob bindings (2 knobs, 0-indexed)

@@ -60,17 +60,17 @@ Validate your configuration at any time:
 python -m keypad.app check-config
 ```
 
-### Browser config editor
+### Configuration window
 
-The easiest way to edit bindings is the built-in editor: click the menu-bar
-icon and choose **Configure…** — a localhost-only page opens with the device
-settings, a clickable NxM key grid, per-knob cw/ccw/press editors covering
-every action type, and a TOML preview. Saving validates the config server-side
-and the running daemon reloads its bindings immediately. Without the menu bar:
+The easiest way to edit bindings is the native config window: click the
+menu-bar icon and choose **Configure…**. It has a General tab (launch at
+login, menu-bar icon, log level, device and layout settings), a Keys tab
+with a clickable NxM key grid, and a Knobs tab with per-knob cw/ccw/press
+editors — all covering every action type. Saving validates the config and
+the running daemon reloads its bindings immediately. Without the menu bar:
 
 ```bash
-python -m keypad.app configure            # serves the editor and opens it
-python -m keypad.app configure --port 8391 --no-open
+python -m keypad.app configure            # opens the window standalone
 ```
 
 ## Device Discovery & Learning
