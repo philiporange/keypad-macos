@@ -43,8 +43,12 @@ The easiest way to edit bindings is the native config window: click the
 menu-bar icon and choose **Configure…**. It has a General tab (launch at
 login, menu-bar icon, log level, device and layout settings), a Keys tab
 with a clickable NxM key grid, and a Knobs tab with per-knob cw/ccw/press
-editors — all covering every action type. Saving validates the config and
-the running app reloads its bindings immediately. Without the menu bar:
+editors — all covering every action type. Where it makes sense the editor
+offers a dropdown of preset commands with a **Custom…** free-text option:
+common AeroSpace commands, common macro chords, your installed
+applications, and your Shortcuts (discovered via `shortcuts list`).
+Saving validates the config and the running app reloads its bindings
+immediately. Without the menu bar:
 
 ```bash
 /Applications/Keypad.app/Contents/MacOS/Keypad configure

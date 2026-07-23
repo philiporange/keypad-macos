@@ -327,6 +327,112 @@ private func parseOptionalHexOrDecimal(_ s: String, name: String) throws -> Int?
     return try parseHexOrDecimal(trimmed, name: name)
 }
 
+// MARK: - Command Presets
+
+/// Preset command choices offered in the action editor alongside a free-text
+/// "Custom…" option. Static lists for chord/aerospace commands; installed
+/// apps and Shortcuts are discovered from the system once per app run.
+enum Presets {
+    static let macroChords = [
+        "cmd+c", "cmd+v", "cmd+x", "cmd+z", "cmd+shift+z",
+        "cmd+t", "cmd+w", "cmd+n", "cmd+q", "cmd+tab", "cmd+space",
+        "cmd+shift+4", "cmd+shift+5",
+    ]
+
+    static let aerospaceCommands = [
+        "workspace 1", "workspace 2", "workspace 3", "workspace 4", "workspace 5",
+        "workspace next --wrap-around", "workspace prev --wrap-around",
+        "workspace-back-and-forth",
+        "focus left", "focus right", "focus up", "focus down",
+        "move left", "move right", "move up", "move down",
+        "fullscreen", "balance-sizes",
+        "layout tiles horizontal vertical", "layout accordion horizontal vertical",
+        "move-workspace-to-monitor --wrap-around next",
+    ]
+
+    /// Names of installed applications from the standard locations.
+    static let installedApps: [String] = {
+        let dirs = ["/Applications", "/System/Applications",
+                    NSHomeDirectory() + "/Applications"]
+        var names: Set<String> = []
+        for dir in dirs {
+            let entries = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+            for entry in entries where entry.hasSuffix(".app") {
+                names.insert(String(entry.dropLast(4)))
+            }
+        }
+        return names.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }()
+
+    /// Names of the user's Shortcuts, from `shortcuts list`. Empty if the
+    /// CLI fails; the editor then falls back to a plain text field.
+    static let shortcuts: [String] = {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/shortcuts")
+        process.arguments = ["list"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { return [] }
+            let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(),
+                             encoding: .utf8) ?? ""
+            return out.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+        } catch {
+            return []
+        }
+    }()
+}
+
+// MARK: - Preset Text Field
+
+/// A picker over preset values with a trailing "Custom…" choice that reveals
+/// a free-text field. With no presets it degrades to a plain text field.
+struct PresetTextField: View {
+    let label: String
+    let presets: [String]
+    let prompt: String
+    @Binding var value: String
+
+    private static let customTag = "__custom__"
+    @State private var choice: String = PresetTextField.customTag
+    @State private var initialized = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if presets.isEmpty {
+                Text("\(label):").font(.caption)
+                TextField(prompt, text: $value)
+            } else {
+                Picker(label, selection: $choice) {
+                    ForEach(presets, id: \.self) { p in
+                        Text(p).tag(p)
+                    }
+                    Divider()
+                    Text("Custom…").tag(Self.customTag)
+                }
+                .onAppear {
+                    guard !initialized else { return }
+                    initialized = true
+                    choice = presets.contains(value) ? value : Self.customTag
+                }
+                .onChange(of: choice) { _, newChoice in
+                    if newChoice != Self.customTag {
+                        value = newChoice
+                    }
+                    // Switching to Custom keeps the current value as the
+                    // starting point for editing.
+                }
+                if choice == Self.customTag {
+                    TextField(prompt, text: $value)
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Action Editor View
 
 public struct ActionEditorView: View {
@@ -350,10 +456,16 @@ public struct ActionEditorView: View {
 
             switch actionModel.type {
             case "macro":
-                VStack(alignment: .leading) {
-                    Text("Chords (comma-separated):")
+                VStack(alignment: .leading, spacing: 6) {
+                    PresetTextField(
+                        label: "Chord",
+                        presets: Presets.macroChords,
+                        prompt: "e.g. cmd+shift+4, cmd+c",
+                        value: $actionModel.keys
+                    )
+                    Text("Custom entries may list several chords, comma-separated.")
                         .font(.caption)
-                    TextField("e.g. cmd+shift+4, cmd+c", text: $actionModel.keys)
+                        .foregroundColor(.secondary)
                 }
             case "media":
                 Picker("Control", selection: $actionModel.control) {
@@ -363,20 +475,32 @@ public struct ActionEditorView: View {
                 }
             case "app":
                 VStack(alignment: .leading, spacing: 6) {
-                    TextField("App name", text: $actionModel.name)
-                    TextField("Path (optional)", text: $actionModel.path)
+                    PresetTextField(
+                        label: "App",
+                        presets: Presets.installedApps,
+                        prompt: "App name",
+                        value: $actionModel.name
+                    )
+                    TextField("Path (optional, overrides app name)", text: $actionModel.path)
                 }
             case "script":
                 VStack(alignment: .leading, spacing: 6) {
                     TextField("Script path", text: $actionModel.path)
                     TextField("Arguments", text: $actionModel.argsJoined)
                 }
-            case "shell", "aerospace":
+            case "shell":
                 VStack(alignment: .leading) {
                     Text("Command:")
                         .font(.caption)
                     TextField("Command", text: $actionModel.command)
                 }
+            case "aerospace":
+                PresetTextField(
+                    label: "Command",
+                    presets: Presets.aerospaceCommands,
+                    prompt: "e.g. workspace 3",
+                    value: $actionModel.command
+                )
             case "url":
                 VStack(alignment: .leading) {
                     Text("URL:")
@@ -399,11 +523,12 @@ public struct ActionEditorView: View {
                         .border(Color.secondary.opacity(0.3))
                 }
             case "shortcut":
-                VStack(alignment: .leading) {
-                    Text("Shortcut name:")
-                        .font(.caption)
-                    TextField("Shortcut name", text: $actionModel.name)
-                }
+                PresetTextField(
+                    label: "Shortcut",
+                    presets: Presets.shortcuts,
+                    prompt: "Shortcut name",
+                    value: $actionModel.name
+                )
             case "system":
                 Picker("Command", selection: $actionModel.command) {
                     ForEach(validSystemCommands.sorted(), id: \.self) { sysCmd in
@@ -553,7 +678,10 @@ private struct KeysView: View {
             Divider()
 
             if let sk = selectedKey, sk.row < model.keysGrid.count, sk.col < model.keysGrid[sk.row].count {
+                // .id resets the editor's internal state (preset/custom
+                // choice) when a different key is selected.
                 ActionEditorView(actionModel: model.keysGrid[sk.row][sk.col])
+                    .id(ObjectIdentifier(model.keysGrid[sk.row][sk.col]))
             } else {
                 Text("Select a key above to edit its binding.")
                     .foregroundColor(.secondary)
@@ -596,6 +724,7 @@ private struct KnobsView: View {
                     }()
 
                     ActionEditorView(actionModel: targetActionModel)
+                        .id(ObjectIdentifier(targetActionModel))
                 }
             } else {
                 Text("No knobs configured in layout.")
