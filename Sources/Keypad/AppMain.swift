@@ -15,7 +15,7 @@ private final class StatusbarAppDelegate: NSObject, NSApplicationDelegate {
     let configPath: String
     private var config: Config?
     private var statusItem: NSStatusItem?
-    private var listener: HIDListener?
+    private var listeners: [HIDListener] = []
     private var configWindowController: ConfigWindowController?
 
     init(configPath: String) {
@@ -30,6 +30,9 @@ private final class StatusbarAppDelegate: NSObject, NSApplicationDelegate {
             logger.info("Accessibility (post event) not granted; requesting access")
             CGRequestPostEventAccess()
         }
+
+        // Honour suspend-actions toggles from a standalone configure window.
+        EventMonitor.shared.startRemoteSync()
 
         do {
             let cfg = try loadConfig(atPath: configPath)
@@ -140,17 +143,30 @@ private final class StatusbarAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupListener(cfg: Config) {
-        listener?.stop()
-        let decoder = makeDecoder(for: cfg)
-        let newListener = HIDListener(device: cfg.device, decoder: decoder) { [weak self] event in
-            guard let self = self, let currentConfig = self.config else { return }
-            self.handleEvent(event, cfg: currentConfig)
+        listeners.forEach { $0.stop() }
+        // One listener per configured identity (e.g. wireless dongle and
+        // wired USB), each with its own decoder — decoders hold per-device
+        // held-key state and must not be shared.
+        listeners = cfg.devices.map { dev in
+            let decoder = makeDecoder(for: dev, layout: cfg.layout)
+            return HIDListener(device: dev, decoder: decoder) { [weak self] event in
+                guard let self = self, let currentConfig = self.config else { return }
+                self.handleEvent(event, cfg: currentConfig)
+            }
         }
-        self.listener = newListener
-        newListener.start()
+        listeners.forEach { $0.start() }
     }
 
     private func handleEvent(_ event: KeypadEvent, cfg: Config) {
+        // Feed the config window's live highlight regardless of whether the
+        // event is bound to an action.
+        EventMonitor.shared.record(event)
+
+        // Test mode: the config window can suspend actions so pad input
+        // only lights up the UI instead of firing bindings (most of which
+        // would defocus the window being tested from).
+        guard !EventMonitor.shared.actionsSuspended else { return }
+
         switch event {
         case .key(let row, let col, let pressed):
             guard pressed else { return }
@@ -202,7 +218,7 @@ private final class StatusbarAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quitApp() {
-        listener?.stop()
+        listeners.forEach { $0.stop() }
         NSApp.terminate(nil)
     }
 
@@ -231,6 +247,30 @@ public enum AppMain {
     public static func runConfigureWindow(configPath: String) {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
+
+        // Keep suspend-actions state in sync with a running daemon.
+        EventMonitor.shared.startRemoteSync()
+
+        // Standalone mode has no daemon in-process, so start listen-only
+        // listeners to drive the window's live keypress highlight. No
+        // actions are executed here — a running daemon does that; HID
+        // listening is non-exclusive, so both can observe at once.
+        // The holder keeps the listeners alive for the window's lifetime
+        // and lets the @Sendable close-notification block reach them.
+        final class MonitorHolder: @unchecked Sendable {
+            var listeners: [HIDListener] = []
+        }
+        let holder = MonitorHolder()
+        if let cfg = try? loadConfig(atPath: configPath) {
+            holder.listeners = cfg.devices.map { dev in
+                let decoder = makeDecoder(for: dev, layout: cfg.layout)
+                return HIDListener(device: dev, decoder: decoder) { event in
+                    EventMonitor.shared.record(event)
+                }
+            }
+            holder.listeners.forEach { $0.start() }
+        }
+
         let controller = ConfigWindowController(configPath: configPath)
         controller.show()
         // Standalone mode has no menu bar item to return to: closing the
@@ -238,7 +278,13 @@ public enum AppMain {
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: nil, queue: .main
         ) { _ in
-            DispatchQueue.main.async { NSApp.terminate(nil) }
+            Task { @MainActor in
+                // Never leave a running daemon with actions suspended after
+                // the window that suspended them is gone.
+                EventMonitor.shared.actionsSuspended = false
+                holder.listeners.forEach { $0.stop() }
+                NSApp.terminate(nil)
+            }
         }
         app.run()
     }

@@ -176,7 +176,10 @@ public struct KnobBinding: Equatable {
 }
 
 public struct Config: Equatable {
-    public var device: DeviceConfig
+    /// All configured device identities. The daemon listens to every entry,
+    /// so a pad reachable both wired (USB) and wireless (dongle/Bluetooth,
+    /// different VID/PID) works from a single config. Always non-empty.
+    public var devices: [DeviceConfig]
     public var layout: LayoutConfig
     public var keys: [KeyBinding]
     public var knobs: [KnobBinding]
@@ -184,6 +187,29 @@ public struct Config: Equatable {
     public var logLevel: String
     public var icon: String?
     public var launchAtLogin: Bool
+
+    /// The primary (first) device, for callers that predate multi-device.
+    public var device: DeviceConfig { devices[0] }
+
+    public init(
+        devices: [DeviceConfig],
+        layout: LayoutConfig,
+        keys: [KeyBinding] = [],
+        knobs: [KnobBinding] = [],
+        statusbar: Bool = true,
+        logLevel: String = "INFO",
+        icon: String? = nil,
+        launchAtLogin: Bool = false
+    ) {
+        self.devices = devices
+        self.layout = layout
+        self.keys = keys
+        self.knobs = knobs
+        self.statusbar = statusbar
+        self.logLevel = logLevel
+        self.icon = icon
+        self.launchAtLogin = launchAtLogin
+    }
 
     public init(
         device: DeviceConfig,
@@ -195,14 +221,16 @@ public struct Config: Equatable {
         icon: String? = nil,
         launchAtLogin: Bool = false
     ) {
-        self.device = device
-        self.layout = layout
-        self.keys = keys
-        self.knobs = knobs
-        self.statusbar = statusbar
-        self.logLevel = logLevel
-        self.icon = icon
-        self.launchAtLogin = launchAtLogin
+        self.init(
+            devices: [device],
+            layout: layout,
+            keys: keys,
+            knobs: knobs,
+            statusbar: statusbar,
+            logLevel: logLevel,
+            icon: icon,
+            launchAtLogin: launchAtLogin
+        )
     }
 }
 
@@ -366,35 +394,52 @@ public func loadConfig(atPath path: String) throws -> Config {
         throw ConfigError.invalid("Error parsing TOML configuration: \(error)")
     }
 
-    // Validate [device]
-    guard let deviceTable = rootTable["device"]?.table else {
+    // Validate [device] (single table) or [[device]] (array of tables).
+    // A pad that connects both wired and via a wireless dongle presents two
+    // different VID/PID identities; listing both keeps it working either way.
+    func parseDeviceTable(_ deviceTable: TOMLTable) throws -> DeviceConfig {
+        guard let vendorID = deviceTable["vendor_id"]?.int else {
+            throw ConfigError.invalid("Device vendor_id must be an integer")
+        }
+
+        guard let productID = deviceTable["product_id"]?.int else {
+            throw ConfigError.invalid("Device product_id must be an integer")
+        }
+
+        let usagePage = deviceTable["usage_page"]?.int
+        let usage = deviceTable["usage"]?.int
+
+        let protocolName = deviceTable["protocol"]?.string ?? "vendor"
+        guard validProtocols.contains(protocolName) else {
+            let sortedProtocols = validProtocols.sorted()
+            throw ConfigError.invalid("Device protocol must be one of \(sortedProtocols), got \(protocolName)")
+        }
+
+        return DeviceConfig(
+            vendorID: vendorID,
+            productID: productID,
+            usagePage: usagePage,
+            usage: usage,
+            protocolName: protocolName
+        )
+    }
+
+    var deviceConfigs: [DeviceConfig] = []
+    if let deviceArray = rootTable["device"]?.array {
+        for deviceItem in deviceArray {
+            guard let deviceTable = deviceItem.table else {
+                throw ConfigError.invalid("Each [[device]] entry must be a table")
+            }
+            deviceConfigs.append(try parseDeviceTable(deviceTable))
+        }
+        guard !deviceConfigs.isEmpty else {
+            throw ConfigError.invalid("At least one [[device]] entry is required")
+        }
+    } else if let deviceTable = rootTable["device"]?.table {
+        deviceConfigs.append(try parseDeviceTable(deviceTable))
+    } else {
         throw ConfigError.invalid("Missing or invalid [device] section")
     }
-
-    guard let vendorID = deviceTable["vendor_id"]?.int else {
-        throw ConfigError.invalid("Device vendor_id must be an integer")
-    }
-
-    guard let productID = deviceTable["product_id"]?.int else {
-        throw ConfigError.invalid("Device product_id must be an integer")
-    }
-
-    let usagePage = deviceTable["usage_page"]?.int
-    let usage = deviceTable["usage"]?.int
-
-    let protocolName = deviceTable["protocol"]?.string ?? "vendor"
-    guard validProtocols.contains(protocolName) else {
-        let sortedProtocols = validProtocols.sorted()
-        throw ConfigError.invalid("Device protocol must be one of \(sortedProtocols), got \(protocolName)")
-    }
-
-    let deviceConfig = DeviceConfig(
-        vendorID: vendorID,
-        productID: productID,
-        usagePage: usagePage,
-        usage: usage,
-        protocolName: protocolName
-    )
 
     // Validate [layout]
     guard let layoutTable = rootTable["layout"]?.table else {
@@ -492,7 +537,7 @@ public func loadConfig(atPath path: String) throws -> Config {
     }
 
     return Config(
-        device: deviceConfig,
+        devices: deviceConfigs,
         layout: layoutConfig,
         keys: keyBindings,
         knobs: knobBindings,

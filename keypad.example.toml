@@ -13,6 +13,25 @@ usage = 0x0001
 #               (e.g. a CH57x pad programmed with ch57x-keyboard-tool)
 protocol = "vendor"
 
+# A pad that connects several ways (wired USB vs. wireless dongle) shows a
+# different VID/PID per transport. List every identity with [[device]]
+# blocks instead of the single [device] table above, and the daemon listens
+# to all of them:
+#
+#   [[device]]                # wireless dongle
+#   vendor_id = 0x07d7
+#   product_id = 0x0000
+#   usage_page = 0x0001
+#   usage = 0x0006
+#   protocol = "keyboard"
+#
+#   [[device]]                # wired USB (CH57x)
+#   vendor_id = 0x1189
+#   product_id = 0x8890
+#   usage_page = 0x0001
+#   usage = 0x0006
+#   protocol = "keyboard"
+
 [layout]
 rows = 3
 cols = 3

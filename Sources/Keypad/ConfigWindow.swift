@@ -236,12 +236,28 @@ public final class KnobModel {
 }
 
 @Observable
-public final class ConfigModel {
+public final class DeviceModel: Identifiable {
+    public let id = UUID()
     public var vendorHex: String = "0x1234"
     public var productHex: String = "0x5678"
     public var usagePageHex: String = ""
     public var usageHex: String = ""
     public var protocolName: String = "vendor"
+
+    public init() {}
+
+    public init(from device: DeviceConfig) {
+        vendorHex = String(format: "0x%04x", device.vendorID)
+        productHex = String(format: "0x%04x", device.productID)
+        usagePageHex = device.usagePage.map { String(format: "0x%04x", $0) } ?? ""
+        usageHex = device.usage.map { String(format: "0x%04x", $0) } ?? ""
+        protocolName = device.protocolName
+    }
+}
+
+@Observable
+public final class ConfigModel {
+    public var devices: [DeviceModel] = [DeviceModel()]
 
     public var rows: Int = 3
     public var cols: Int = 3
@@ -265,11 +281,7 @@ public final class ConfigModel {
     public func reloadFromDisk() {
         guard let cfg = try? loadConfig(atPath: configPath) else { return }
 
-        vendorHex = String(format: "0x%04x", cfg.device.vendorID)
-        productHex = String(format: "0x%04x", cfg.device.productID)
-        usagePageHex = cfg.device.usagePage.map { String(format: "0x%04x", $0) } ?? ""
-        usageHex = cfg.device.usage.map { String(format: "0x%04x", $0) } ?? ""
-        protocolName = cfg.device.protocolName
+        devices = cfg.devices.map { DeviceModel(from: $0) }
 
         rows = cfg.layout.rows
         cols = cfg.layout.cols
@@ -572,6 +584,29 @@ public struct ActionEditorView: View {
 
 // MARK: - Tab Views
 
+private struct DeviceEditorView: View {
+    let title: String
+    @Bindable var device: DeviceModel
+    let canRemove: Bool
+    let onRemove: () -> Void
+
+    var body: some View {
+        Section(title) {
+            TextField("Vendor ID (hex/dec)", text: $device.vendorHex)
+            TextField("Product ID (hex/dec)", text: $device.productHex)
+            TextField("Usage page (optional)", text: $device.usagePageHex)
+            TextField("Usage (optional)", text: $device.usageHex)
+            Picker("Protocol", selection: $device.protocolName) {
+                Text("vendor").tag("vendor")
+                Text("keyboard").tag("keyboard")
+            }
+            if canRemove {
+                Button("Remove Device", role: .destructive, action: onRemove)
+            }
+        }
+    }
+}
+
 private struct GeneralView: View {
     @Bindable var model: ConfigModel
 
@@ -596,15 +631,24 @@ private struct GeneralView: View {
                 Text("ERROR").tag("ERROR")
             }
 
-            Section("Device") {
-                TextField("Vendor ID (hex/dec)", text: $model.vendorHex)
-                TextField("Product ID (hex/dec)", text: $model.productHex)
-                TextField("Usage page (optional)", text: $model.usagePageHex)
-                TextField("Usage (optional)", text: $model.usageHex)
-                Picker("Protocol", selection: $model.protocolName) {
-                    Text("vendor").tag("vendor")
-                    Text("keyboard").tag("keyboard")
+            // One section per device identity. A pad reachable both wired
+            // and through a wireless dongle needs one entry for each.
+            ForEach(Array(model.devices.enumerated()), id: \.element.id) { idx, dev in
+                DeviceEditorView(
+                    title: model.devices.count == 1 ? "Device" : "Device \(idx + 1)",
+                    device: dev,
+                    canRemove: model.devices.count > 1,
+                    onRemove: { model.devices.removeAll { $0.id == dev.id } }
+                )
+            }
+
+            Section {
+                Button("Add Device") {
+                    model.devices.append(DeviceModel())
                 }
+                Text("Add a second device when the same pad connects with a different VID/PID (e.g. wired USB vs. wireless dongle).")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
             Section("Layout") {
@@ -622,10 +666,30 @@ struct KeySelection: Hashable {
     var col: Int
 }
 
+/// Test-mode switch shown on the Keys and Knobs tabs: pad input keeps
+/// lighting up the UI, but bound actions are not executed — most actions
+/// (workspace switches, app launches) would defocus this window mid-test.
+private struct SuspendActionsToggle: View {
+    var body: some View {
+        @Bindable var monitor = EventMonitor.shared
+        VStack(alignment: .leading, spacing: 2) {
+            Toggle("Suspend actions (test mode)", isOn: $monitor.actionsSuspended)
+                .toggleStyle(.switch)
+            Text(monitor.actionsSuspended
+                 ? "Pad input only lights up here — no actions run. Resumes when this window closes."
+                 : "Turn on to press keys without triggering their actions (which can defocus this window).")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 private struct KeyGridButton: View {
     let number: Int
     let summary: String
     let isSelected: Bool
+    let isLit: Bool
     let action: () -> Void
 
     var body: some View {
@@ -636,7 +700,7 @@ private struct KeyGridButton: View {
                     .fontWeight(.semibold)
                 Text(summary)
                     .font(.caption2)
-                    .foregroundColor(isSelected ? nil : .secondary)
+                    .foregroundColor(isSelected || isLit ? nil : .secondary)
             }
             .frame(height: 44)
             .frame(maxWidth: .infinity)
@@ -650,6 +714,8 @@ private struct KeysView: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            SuspendActionsToggle()
+
             let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: max(1, model.cols))
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 8) {
@@ -657,16 +723,22 @@ private struct KeysView: View {
                         let r = i / model.cols
                         let c = i % model.cols
                         let sel = KeySelection(row: r, col: c)
+                        // Flash orange while a physical press of this key was
+                        // just decoded, to correlate hardware with bindings.
+                        let isLit = EventMonitor.shared.litKeys.contains(KeyCell(row: r, col: c))
                         let actionModel = (r < model.keysGrid.count && c < model.keysGrid[r].count)
                             ? model.keysGrid[r][c] : ActionModel()
                         let button = KeyGridButton(
                             number: i + 1,
                             summary: actionModel.type == "(none)" ? "—" : actionModel.type,
-                            isSelected: selectedKey == sel
+                            isSelected: selectedKey == sel,
+                            isLit: isLit
                         ) {
                             selectedKey = sel
                         }
-                        if selectedKey == sel {
+                        if isLit {
+                            button.buttonStyle(.borderedProminent).tint(.orange)
+                        } else if selectedKey == sel {
                             button.buttonStyle(.borderedProminent)
                         } else {
                             button.buttonStyle(.bordered)
@@ -698,7 +770,26 @@ private struct KnobsView: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            SuspendActionsToggle()
+
             if model.knobs > 0 {
+                // Flash indicators: a knob lights orange when a physical
+                // rotation or press was just decoded.
+                HStack(spacing: 8) {
+                    ForEach(0..<model.knobs, id: \.self) { idx in
+                        let isLit = EventMonitor.shared.litKnobs.contains(idx)
+                        Text("Knob \(idx)")
+                            .font(.caption)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule().fill(isLit ? Color.orange : Color.secondary.opacity(0.15))
+                            )
+                            .foregroundColor(isLit ? .white : .secondary)
+                    }
+                    Spacer()
+                }
+
                 HStack {
                     Picker("Knob", selection: $selectedKnobIndex) {
                         ForEach(0..<model.knobs, id: \.self) { idx in
@@ -775,6 +866,32 @@ public struct ConfigView: View {
 
             Divider()
 
+            // Live input feedback: the most recent event decoded from the
+            // pad, correlating physical presses with recognized signals.
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(EventMonitor.shared.lastEvent == nil ? Color.secondary.opacity(0.3) : Color.orange)
+                    .frame(width: 8, height: 8)
+                if let event = EventMonitor.shared.lastEvent, let date = EventMonitor.shared.lastEventDate {
+                    Text("Last input: \(Self.describe(event, cols: model.cols)) at \(Self.timeFormatter.string(from: date))")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text("Last input: none yet — press a key on the pad to test")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                if EventMonitor.shared.actionsSuspended {
+                    Text("· actions suspended")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.orange)
+                }
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.top, 8)
+
             HStack {
                 Button("Import…") {
                     importConfig()
@@ -801,14 +918,45 @@ public struct ConfigView: View {
         }
     }
 
+    /// Human-readable description of a decoded event for the footer.
+    static func describe(_ event: KeypadEvent, cols: Int) -> String {
+        switch event {
+        case .key(let row, let col, let pressed):
+            let number = cols > 0 ? row * cols + col + 1 : 0
+            return "Key \(number) (row \(row), col \(col)) \(pressed ? "press" : "release")"
+        case .knob(let index, let direction):
+            return "Knob \(index) \(direction.rawValue)"
+        }
+    }
+
+    static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f
+    }()
+
     /// Collect the editor state into TOML text, validated through the real
     /// config parser. Throws with a user-readable message on any invalid
     /// field. Shared by Save and Export.
     private func buildValidatedTOML() throws -> String {
-        let parsedVendorID = try parseHexOrDecimal(model.vendorHex, name: "Vendor ID")
-        let parsedProductID = try parseHexOrDecimal(model.productHex, name: "Product ID")
-        let parsedUsagePage = try parseOptionalHexOrDecimal(model.usagePageHex, name: "Usage page")
-        let parsedUsage = try parseOptionalHexOrDecimal(model.usageHex, name: "Usage")
+        guard !model.devices.isEmpty else {
+            throw ActionModelError("At least one device is required")
+        }
+        var parsedDevices: [DeviceConfig] = []
+        for (idx, dev) in model.devices.enumerated() {
+            let label = model.devices.count == 1 ? "" : " (device \(idx + 1))"
+            let vendorID = try parseHexOrDecimal(dev.vendorHex, name: "Vendor ID\(label)")
+            let productID = try parseHexOrDecimal(dev.productHex, name: "Product ID\(label)")
+            let usagePage = try parseOptionalHexOrDecimal(dev.usagePageHex, name: "Usage page\(label)")
+            let usage = try parseOptionalHexOrDecimal(dev.usageHex, name: "Usage\(label)")
+            parsedDevices.append(DeviceConfig(
+                vendorID: vendorID,
+                productID: productID,
+                usagePage: usagePage,
+                usage: usage,
+                protocolName: dev.protocolName
+            ))
+        }
 
         guard model.rows > 0 && model.cols > 0 && model.knobs >= 0 else {
             throw ActionModelError("Rows, cols, and knobs dimensions must be valid positive integers")
@@ -840,13 +988,7 @@ public struct ConfigView: View {
         }
 
         let dump = ConfigDump(
-            device: DeviceConfig(
-                vendorID: parsedVendorID,
-                productID: parsedProductID,
-                usagePage: parsedUsagePage,
-                usage: parsedUsage,
-                protocolName: model.protocolName
-            ),
+            devices: parsedDevices,
             layout: LayoutConfig(rows: model.rows, cols: model.cols, knobs: model.knobs),
             app: AppDump(
                 statusbar: model.statusbar,
@@ -967,6 +1109,7 @@ public final class ConfigWindowController {
     public let onSaved: (() -> Void)?
     private var window: NSWindow?
     private var model: ConfigModel?
+    private var keyMonitor: Any?
 
     public init(configPath: String, onSaved: (() -> Void)? = nil) {
         self.configPath = configPath
@@ -989,6 +1132,31 @@ public final class ConfigWindowController {
             win.isReleasedWhenClosed = false
             win.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             self.window = win
+
+            // Suspend-actions is a test aid, not a setting: never leave it
+            // on once the window that enabled it is closed.
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: win, queue: .main
+            ) { _ in
+                Task { @MainActor in
+                    EventMonitor.shared.actionsSuspended = false
+                }
+            }
+
+            // Swallow F13–F24 keystrokes aimed at this window. Testing the
+            // pad lands its keys here as real function-key presses; nothing
+            // in the window handles them, and AppKit beeps on unhandled
+            // keyDowns. Consuming them keeps testing silent without
+            // affecting typing in the editor fields.
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak win] event in
+                guard event.window === win,
+                      let scalar = event.charactersIgnoringModifiers?.unicodeScalars.first,
+                      (0xF710...0xF71B).contains(scalar.value)  // NSF13FunctionKey...NSF24FunctionKey
+                else {
+                    return event
+                }
+                return nil
+            }
         }
 
         NSApp.activate(ignoringOtherApps: true)

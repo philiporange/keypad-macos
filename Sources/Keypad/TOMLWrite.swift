@@ -26,11 +26,25 @@ public struct AppDump: Equatable {
 }
 
 public struct ConfigDump: Equatable {
-    public var device: DeviceConfig
+    public var devices: [DeviceConfig]
     public var layout: LayoutConfig
     public var app: AppDump
     public var keys: [(row: Int, col: Int, action: KeypadAction?)]
     public var knobs: [(index: Int, onCW: KeypadAction?, onCCW: KeypadAction?, onPress: KeypadAction?)]
+
+    public init(
+        devices: [DeviceConfig],
+        layout: LayoutConfig,
+        app: AppDump,
+        keys: [(row: Int, col: Int, action: KeypadAction?)] = [],
+        knobs: [(index: Int, onCW: KeypadAction?, onCCW: KeypadAction?, onPress: KeypadAction?)] = []
+    ) {
+        self.devices = devices
+        self.layout = layout
+        self.app = app
+        self.keys = keys
+        self.knobs = knobs
+    }
 
     public init(
         device: DeviceConfig,
@@ -39,15 +53,11 @@ public struct ConfigDump: Equatable {
         keys: [(row: Int, col: Int, action: KeypadAction?)] = [],
         knobs: [(index: Int, onCW: KeypadAction?, onCCW: KeypadAction?, onPress: KeypadAction?)] = []
     ) {
-        self.device = device
-        self.layout = layout
-        self.app = app
-        self.keys = keys
-        self.knobs = knobs
+        self.init(devices: [device], layout: layout, app: app, keys: keys, knobs: knobs)
     }
 
     public static func == (lhs: ConfigDump, rhs: ConfigDump) -> Bool {
-        guard lhs.device == rhs.device, lhs.layout == rhs.layout, lhs.app == rhs.app else { return false }
+        guard lhs.devices == rhs.devices, lhs.layout == rhs.layout, lhs.app == rhs.app else { return false }
         guard lhs.keys.count == rhs.keys.count, lhs.knobs.count == rhs.knobs.count else { return false }
         for (l, r) in zip(lhs.keys, rhs.keys) {
             if l.row != r.row || l.col != r.col || l.action != r.action { return false }
@@ -140,23 +150,26 @@ public func actionToInlineTable(_ a: KeypadAction) -> String {
 public func dumpsTOML(_ model: ConfigDump) -> String {
     var lines: [String] = []
 
-    // [device]
-    lines.append("[device]")
-    let hexVID = String(format: "0x%04x", model.device.vendorID)
-    let hexPID = String(format: "0x%04x", model.device.productID)
-    lines.append("vendor_id = \(hexVID)")
-    lines.append("product_id = \(hexPID)")
+    // [device] for a single device (the familiar format); [[device]]
+    // blocks when several identities are configured (e.g. wired + dongle).
+    for device in model.devices {
+        lines.append(model.devices.count == 1 ? "[device]" : "[[device]]")
+        let hexVID = String(format: "0x%04x", device.vendorID)
+        let hexPID = String(format: "0x%04x", device.productID)
+        lines.append("vendor_id = \(hexVID)")
+        lines.append("product_id = \(hexPID)")
 
-    if let up = model.device.usagePage {
-        lines.append("usage_page = \(String(format: "0x%04x", up))")
+        if let up = device.usagePage {
+            lines.append("usage_page = \(String(format: "0x%04x", up))")
+        }
+        if let u = device.usage {
+            lines.append("usage = \(String(format: "0x%04x", u))")
+        }
+        if !device.protocolName.isEmpty && device.protocolName != "vendor" {
+            lines.append("protocol = \(escapeString(device.protocolName))")
+        }
+        lines.append("")
     }
-    if let u = model.device.usage {
-        lines.append("usage = \(String(format: "0x%04x", u))")
-    }
-    if !model.device.protocolName.isEmpty && model.device.protocolName != "vendor" {
-        lines.append("protocol = \(escapeString(model.device.protocolName))")
-    }
-    lines.append("")
 
     // [layout]
     lines.append("[layout]")

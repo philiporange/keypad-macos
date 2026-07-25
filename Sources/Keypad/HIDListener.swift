@@ -205,50 +205,69 @@ private final class LearnContext {
     }
 }
 
-public func learnReports(device: DeviceConfig, seconds: Double, onReport: @escaping ([UInt8]) -> Void) {
-    let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+/// Listen for raw reports from every configured device at once. The report
+/// callback receives the DeviceConfig the report arrived from, so wired and
+/// wireless identities can be told apart.
+public func learnReports(
+    devices: [DeviceConfig],
+    seconds: Double,
+    onReport: @escaping (DeviceConfig, [UInt8]) -> Void
+) {
+    var managers: [IOHIDManager] = []
+    var rawCtxs: [UnsafeMutableRawPointer] = []
 
-    var matching: [String: Any] = [
-        kIOHIDVendorIDKey: device.vendorID,
-        kIOHIDProductIDKey: device.productID
-    ]
-    if let up = device.usagePage {
-        matching[kIOHIDDeviceUsagePageKey] = up
-    }
-    if let u = device.usage {
-        matching[kIOHIDDeviceUsageKey] = u
-    }
+    for device in devices {
+        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
 
-    IOHIDManagerSetDeviceMatching(manager, matching as CFDictionary)
-
-    let ctx = LearnContext(callback: onReport)
-    let rawCtx = Unmanaged.passRetained(ctx).toOpaque()
-
-    let matchedCallback: IOHIDDeviceCallback = { context, result, sender, device in
-        guard let context = context else { return }
-        let lCtx = Unmanaged<LearnContext>.fromOpaque(context).takeUnretainedValue()
-
-        let capacity = 64
-        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: capacity)
-        lCtx.buffers.append(buffer)
-
-        let reportCallback: IOHIDReportCallback = { context, result, sender, type, reportID, report, reportLength in
-            guard let context = context else { return }
-            let lCtx = Unmanaged<LearnContext>.fromOpaque(context).takeUnretainedValue()
-            let data = Array(UnsafeBufferPointer(start: report, count: reportLength))
-            lCtx.callback(data)
+        var matching: [String: Any] = [
+            kIOHIDVendorIDKey: device.vendorID,
+            kIOHIDProductIDKey: device.productID
+        ]
+        if let up = device.usagePage {
+            matching[kIOHIDDeviceUsagePageKey] = up
+        }
+        if let u = device.usage {
+            matching[kIOHIDDeviceUsageKey] = u
         }
 
-        IOHIDDeviceRegisterInputReportCallback(device, buffer, capacity, reportCallback, context)
-    }
+        IOHIDManagerSetDeviceMatching(manager, matching as CFDictionary)
 
-    IOHIDManagerRegisterDeviceMatchingCallback(manager, matchedCallback, rawCtx)
-    IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
-    IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+        let ctx = LearnContext { data in onReport(device, data) }
+        let rawCtx = Unmanaged.passRetained(ctx).toOpaque()
+
+        let matchedCallback: IOHIDDeviceCallback = { context, result, sender, device in
+            guard let context = context else { return }
+            let lCtx = Unmanaged<LearnContext>.fromOpaque(context).takeUnretainedValue()
+
+            let capacity = 64
+            let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: capacity)
+            lCtx.buffers.append(buffer)
+
+            let reportCallback: IOHIDReportCallback = { context, result, sender, type, reportID, report, reportLength in
+                guard let context = context else { return }
+                let lCtx = Unmanaged<LearnContext>.fromOpaque(context).takeUnretainedValue()
+                let data = Array(UnsafeBufferPointer(start: report, count: reportLength))
+                lCtx.callback(data)
+            }
+
+            IOHIDDeviceRegisterInputReportCallback(device, buffer, capacity, reportCallback, context)
+        }
+
+        IOHIDManagerRegisterDeviceMatchingCallback(manager, matchedCallback, rawCtx)
+        IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDManagerOpen(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+
+        managers.append(manager)
+        rawCtxs.append(rawCtx)
+    }
 
     RunLoop.main.run(until: Date().addingTimeInterval(seconds))
 
-    IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
-    IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
-    Unmanaged<LearnContext>.fromOpaque(rawCtx).release()
+    for manager in managers {
+        IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
+        IOHIDManagerClose(manager, IOOptionBits(kIOHIDOptionsTypeNone))
+    }
+    for rawCtx in rawCtxs {
+        Unmanaged<LearnContext>.fromOpaque(rawCtx).release()
+    }
 }

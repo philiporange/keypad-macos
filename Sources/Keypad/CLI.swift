@@ -96,11 +96,12 @@ public struct KeypadCLI {
                     _ = cfg
                     AppMain.runStatusbar(configPath: configPath)
                 } else {
-                    let decoder = makeDecoder(for: cfg)
-                    let listener = HIDListener(device: cfg.device, decoder: decoder) { event in
-                        handleEvent(event, cfg: cfg)
+                    let listeners = cfg.devices.map { dev in
+                        HIDListener(device: dev, decoder: makeDecoder(for: dev, layout: cfg.layout)) { event in
+                            handleEvent(event, cfg: cfg)
+                        }
                     }
-                    listener.start()
+                    listeners.forEach { $0.start() }
                     RunLoop.main.run()
                 }
             } catch {
@@ -158,11 +159,14 @@ public struct KeypadCLI {
         do {
             let cfg = try loadConfig(atPath: configPath)
             print("Configuration valid: \(configPath)")
-            let vidHex = String(format: "0x%04x", cfg.device.vendorID)
-            let pidHex = String(format: "0x%04x", cfg.device.productID)
-            let upStr = cfg.device.usagePage.map { String($0) } ?? "nil"
-            let uStr = cfg.device.usage.map { String($0) } ?? "nil"
-            print("Device: \(vidHex):\(pidHex) (usage_page=\(upStr), usage=\(uStr), protocol=\(cfg.device.protocolName))")
+            for (idx, dev) in cfg.devices.enumerated() {
+                let vidHex = String(format: "0x%04x", dev.vendorID)
+                let pidHex = String(format: "0x%04x", dev.productID)
+                let upStr = dev.usagePage.map { String($0) } ?? "nil"
+                let uStr = dev.usage.map { String($0) } ?? "nil"
+                let label = cfg.devices.count == 1 ? "Device" : "Device \(idx + 1)"
+                print("\(label): \(vidHex):\(pidHex) (usage_page=\(upStr), usage=\(uStr), protocol=\(dev.protocolName))")
+            }
             print("Layout: \(cfg.layout.rows)x\(cfg.layout.cols) grid, \(cfg.layout.knobs) knobs")
             print("App Settings: statusbar=\(cfg.statusbar), log_level=\(cfg.logLevel)\n")
 
@@ -220,12 +224,14 @@ public struct KeypadCLI {
     private static func cmdLearn(configPath: String, seconds: Double) {
         do {
             let cfg = try loadConfig(atPath: configPath)
-            let vidHex = String(format: "0x%04x", cfg.device.vendorID)
-            let pidHex = String(format: "0x%04x", cfg.device.productID)
-            print("Listening for raw reports from device \(vidHex):\(pidHex) for \(seconds)s...")
-            learnReports(device: cfg.device, seconds: seconds) { data in
+            let ids = cfg.devices
+                .map { String(format: "0x%04x:0x%04x", $0.vendorID, $0.productID) }
+                .joined(separator: ", ")
+            print("Listening for raw reports from device(s) \(ids) for \(seconds)s...")
+            learnReports(devices: cfg.devices, seconds: seconds) { device, data in
+                let devStr = String(format: "0x%04x:0x%04x", device.vendorID, device.productID)
                 let hexStr = data.map { String(format: "%02x", $0) }.joined(separator: " ")
-                print("Report: \(hexStr)")
+                print("[\(devStr)] Report: \(hexStr)")
             }
         } catch {
             fputs("Error in learn mode: \(error)\n", stderr)

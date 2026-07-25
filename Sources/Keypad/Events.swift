@@ -120,11 +120,18 @@ public final class KeyboardReportDecoder: ReportDecoder {
 
     private func parseReport(_ data: [UInt8]) -> (UInt8, [UInt8])? {
         guard !data.isEmpty else { return nil }
+        // Numbered report: 01/02 <modifier> <keys...>. The key bytes may
+        // start with a reserved 0x00 (boot layout: 9 bytes total, e.g. the
+        // wireless dongle) or be a plain key array (e.g. the wired CH57x
+        // interface 2: 11 bytes total, no reserved byte). Zero never
+        // encodes a key, so reading everything after the modifier and
+        // dropping zeros parses both layouts.
         if data.count >= 9 && (data[0] == 1 || data[0] == 2) {
             let modifier = data[1]
-            let usages = Array(data[3..<9]).filter { $0 != 0 }
+            let usages = Array(data[2...]).filter { $0 != 0 }
             return (modifier, usages)
         }
+        // Unnumbered boot report: <modifier> <reserved> <6 keys>.
         if data.count == 8 {
             let modifier = data[0]
             let usages = Array(data[2..<8]).filter { $0 != 0 }
@@ -151,10 +158,17 @@ public final class KeyboardReportDecoder: ReportDecoder {
 
 // MARK: - Factory Function
 
-public func makeDecoder(for config: Config) -> ReportDecoder {
-    if config.device.protocolName == "keyboard" {
-        return KeyboardReportDecoder(rows: config.layout.rows, cols: config.layout.cols, knobs: config.layout.knobs)
+/// Build a decoder for one device. Decoders hold per-device state (held
+/// keys), so every listener needs its own instance — never share one
+/// across devices.
+public func makeDecoder(for device: DeviceConfig, layout: LayoutConfig) -> ReportDecoder {
+    if device.protocolName == "keyboard" {
+        return KeyboardReportDecoder(rows: layout.rows, cols: layout.cols, knobs: layout.knobs)
     } else {
-        return VendorReportDecoder(rows: config.layout.rows, cols: config.layout.cols, knobs: config.layout.knobs)
+        return VendorReportDecoder(rows: layout.rows, cols: layout.cols, knobs: layout.knobs)
     }
+}
+
+public func makeDecoder(for config: Config) -> ReportDecoder {
+    return makeDecoder(for: config.device, layout: config.layout)
 }

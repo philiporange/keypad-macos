@@ -56,13 +56,26 @@ cp keypad.example.toml ~/.config/keypad/keypad.toml
 
 Edit `~/.config/keypad/keypad.toml` to define your device parameters (`vendor_id`, `product_id`, `usage_page`, `usage`, `protocol`), layout grid size, and action bindings — `keypad.example.toml` documents every action type.
 
+A pad that connects several ways (wired USB vs. wireless dongle) presents
+a different VID/PID per transport. List every identity as a `[[device]]`
+block (instead of the single `[device]` table) and the daemon listens to
+all of them at once; `keypad.example.toml` shows the syntax.
+
 ### Configuration window
 
 The easiest way to edit bindings is the native config window: click the
 menu-bar icon and choose **Configure…**. It has a General tab (launch at
 login, menu-bar icon, log level, device and layout settings), a Keys tab
 with a clickable NxM key grid, and a Knobs tab with per-knob cw/ccw/press
-editors — all covering every action type. Where it makes sense the editor
+editors — all covering every action type. The window also shows live
+input: a key flashes orange in the grid when its physical key is pressed
+(knobs flash likewise on the Knobs tab), and a footer line reports the
+last decoded event — press a key on the pad to confirm the daemon
+recognizes it. A **Suspend actions (test mode)** switch on the Keys and
+Knobs tabs stops bound actions from firing while you test (most would
+defocus the window); it resumes automatically when the window closes,
+and also reaches a separately running daemon when toggled from the
+standalone `configure` window. Where it makes sense the editor
 offers a dropdown of preset commands with a **Custom…** free-text option:
 common AeroSpace commands, common macro chords, your installed
 applications, and your Shortcuts (discovered via `shortcuts list`).

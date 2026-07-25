@@ -358,4 +358,100 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(loaded.knobs[0].onCCW, KeypadAction(type: "media", control: "volume_down"))
         XCTAssertEqual(loaded.knobs[0].onPress, KeypadAction(type: "media", control: "mute"))
     }
+
+    // MARK: - Multi-Device Tests
+
+    func testMultipleDeviceBlocksParse() throws {
+        let content = """
+        [[device]]
+        vendor_id = 0x07d7
+        product_id = 0x0000
+        usage_page = 0x0001
+        usage = 0x0006
+        protocol = "keyboard"
+
+        [[device]]
+        vendor_id = 0x1189
+        product_id = 0x8890
+        usage_page = 0x0001
+        usage = 0x0006
+        protocol = "keyboard"
+
+        [layout]
+        rows = 3
+        cols = 4
+        knobs = 2
+        """
+        let path = createTempFile(name: "multi_device.toml", content: content)
+        let config = try loadConfig(atPath: path)
+
+        XCTAssertEqual(config.devices.count, 2)
+        XCTAssertEqual(config.devices[0].vendorID, 0x07d7)
+        XCTAssertEqual(config.devices[0].productID, 0x0000)
+        XCTAssertEqual(config.devices[1].vendorID, 0x1189)
+        XCTAssertEqual(config.devices[1].productID, 0x8890)
+        XCTAssertEqual(config.devices[1].protocolName, "keyboard")
+        // Primary device stays the first entry for legacy callers.
+        XCTAssertEqual(config.device.vendorID, 0x07d7)
+    }
+
+    func testSingleDeviceTableStillParses() throws {
+        let content = """
+        [device]
+        vendor_id = 0x1234
+        product_id = 0x5678
+
+        [layout]
+        rows = 3
+        cols = 3
+        knobs = 0
+        """
+        let path = createTempFile(name: "single_device.toml", content: content)
+        let config = try loadConfig(atPath: path)
+
+        XCTAssertEqual(config.devices.count, 1)
+        XCTAssertEqual(config.device.vendorID, 0x1234)
+        XCTAssertEqual(config.device.protocolName, "vendor")
+    }
+
+    func testInvalidDeviceEntryInArrayThrows() throws {
+        let content = """
+        [[device]]
+        vendor_id = 0x1234
+        product_id = 0x5678
+
+        [[device]]
+        vendor_id = 0x9999
+
+        [layout]
+        rows = 3
+        cols = 3
+        knobs = 0
+        """
+        let path = createTempFile(name: "bad_multi_device.toml", content: content)
+        XCTAssertThrowsError(try loadConfig(atPath: path)) { error in
+            guard case ConfigError.invalid(let msg) = error else {
+                return XCTFail("Expected ConfigError.invalid")
+            }
+            XCTAssertTrue(msg.contains("product_id"))
+        }
+    }
+
+    func testDumpsTOMLMultiDeviceRoundTrip() throws {
+        let devices = [
+            DeviceConfig(vendorID: 0x07d7, productID: 0x0000, usagePage: 0x0001, usage: 0x0006, protocolName: "keyboard"),
+            DeviceConfig(vendorID: 0x1189, productID: 0x8890, usagePage: 0x0001, usage: 0x0006, protocolName: "keyboard")
+        ]
+        let layout = LayoutConfig(rows: 3, cols: 4, knobs: 2)
+        let app = AppDump(statusbar: false, logLevel: "INFO", icon: nil, launchAtLogin: true)
+
+        let dumpModel = ConfigDump(devices: devices, layout: layout, app: app)
+        let tomlString = dumpsTOML(dumpModel)
+        let path = createTempFile(name: "dump_multi_roundtrip.toml", content: tomlString)
+
+        let loaded = try loadConfig(atPath: path)
+
+        XCTAssertEqual(loaded.devices, devices)
+        XCTAssertEqual(loaded.layout, layout)
+    }
 }
